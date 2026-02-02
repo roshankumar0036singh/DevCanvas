@@ -9,12 +9,15 @@
         "128": "icons/icon128.png"
     },
     "action": {
-        "default_popup": "popup.html",
+        "default_title": "Open DevCanvas",
         "default_icon": {
             "16": "icons/icon16.png",
             "48": "icons/icon48.png",
             "128": "icons/icon128.png"
         }
+    },
+    "side_panel": {
+        "default_path": "popup.html"
     },
     "background": {
         "service_worker": "background.js",
@@ -24,7 +27,8 @@
         "storage",
         "activeTab",
         "scripting",
-        "tabs"
+        "tabs",
+        "sidePanel"
     ],
     "host_permissions": [
         "https://api.github.com/*",
@@ -41,9 +45,6 @@
             "run_at": "document_idle"
         }
     ],
-    "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'"
-    },
     "web_accessible_resources": [
         {
             "resources": [

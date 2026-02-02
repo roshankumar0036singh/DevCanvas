@@ -23,8 +23,23 @@ chrome.runtime.onInstalled.addListener((details) => {
 
         // Open welcome page (future)
         // chrome.tabs.create({ url: 'welcome.html' });
+
+        // Set side panel behavior
+        // This allows the side panel to open when clicking the action icon
+        if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+            chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+                .catch(err => console.error('Failed to set panel behavior:', err));
+        }
     } else if (details.reason === 'update') {
         console.log('DevCanvas updated to version', chrome.runtime.getManifest().version);
+    }
+});
+
+// Handle action click (fallback for older Chrome versions or specific configs)
+chrome.action.onClicked.addListener((tab) => {
+    if (tab.windowId) {
+        chrome.sidePanel.open({ windowId: tab.windowId })
+            .catch(err => console.error('Failed to open side panel:', err));
     }
 });
 

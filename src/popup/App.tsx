@@ -35,9 +35,8 @@ const App: React.FC = () => {
     return (
         <div className={`app theme-${settings.theme}`}>
             <header className="header">
-                <div className="header-content">
+                <div className="header-top">
                     <h1>DevCanvas</h1>
-                    <p className="tagline">Visual Documentation & Collaboration</p>
                 </div>
                 <nav className="nav">
                     <button
