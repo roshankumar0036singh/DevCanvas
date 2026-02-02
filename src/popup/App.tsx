@@ -1,37 +1,77 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import Dashboard from './components/Dashboard';
+import Settings from './components/Settings';
+import storage from '../utils/storage';
+import type { Settings as SettingsType } from '../utils/storage';
+
+type View = 'dashboard' | 'settings';
 
 const App: React.FC = () => {
+    const [currentView, setCurrentView] = useState<View>('dashboard');
+    const [settings, setSettings] = useState<SettingsType | null>(null);
+
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        const loadedSettings = await storage.getSettings();
+        setSettings(loadedSettings);
+    };
+
+    const handleSettingsUpdate = async (newSettings: Partial<SettingsType>) => {
+        await storage.updateSettings(newSettings);
+        await loadSettings();
+    };
+
+    if (!settings) {
+        return (
+            <div className="app loading">
+                <div className="spinner"></div>
+            </div>
+        );
+    }
+
     return (
-        <div className="app">
+        <div className={`app theme-${settings.theme}`}>
             <header className="header">
-                <h1>DevCanvas</h1>
-                <p className="tagline">Visual Documentation & Collaboration</p>
+                <div className="header-content">
+                    <h1>DevCanvas</h1>
+                    <p className="tagline">Visual Documentation & Collaboration</p>
+                </div>
+                <nav className="nav">
+                    <button
+                        className={`nav-btn ${currentView === 'dashboard' ? 'active' : ''}`}
+                        onClick={() => setCurrentView('dashboard')}
+                    >
+                        📊 Dashboard
+                    </button>
+                    <button
+                        className={`nav-btn ${currentView === 'settings' ? 'active' : ''}`}
+                        onClick={() => setCurrentView('settings')}
+                    >
+                        ⚙️ Settings
+                    </button>
+                </nav>
             </header>
 
             <main className="main">
-                <div className="quick-actions">
-                    <button className="action-btn primary">
-                        <span className="icon">📊</span>
-                        <span>New Diagram</span>
-                    </button>
-                    <button className="action-btn">
-                        <span className="icon">📝</span>
-                        <span>New Document</span>
-                    </button>
-                    <button className="action-btn">
-                        <span className="icon">🔗</span>
-                        <span>Analyze Repo</span>
-                    </button>
-                </div>
-
-                <div className="recent">
-                    <h2>Recent</h2>
-                    <p className="empty-state">No recent items yet</p>
-                </div>
+                {currentView === 'dashboard' && <Dashboard settings={settings} />}
+                {currentView === 'settings' && (
+                    <Settings settings={settings} onUpdate={handleSettingsUpdate} />
+                )}
             </main>
 
             <footer className="footer">
-                <button className="settings-btn">⚙️ Settings</button>
+                <span className="version">v0.1.0</span>
+                <a
+                    href="https://github.com/devcanvas/devcanvas"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="github-link"
+                >
+                    GitHub
+                </a>
             </footer>
         </div>
     );
