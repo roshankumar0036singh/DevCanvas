@@ -1,4 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import {
+    BarChart2,
+    FileText,
+    Code2,
+    Plus,
+    Clock,
+    ChevronRight
+} from 'lucide-react';
 import storage from '../../utils/storage';
 import { sendMessage, MessageType } from '../../utils/messaging';
 import type { Settings, Diagram, Document } from '../../utils/storage';
@@ -52,7 +60,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
     };
 
     const handleAnalyzeRepo = async () => {
-        // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab.id) {
             const response = await sendMessage({
@@ -71,53 +78,76 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
     };
 
     if (loading) {
-        return <div className="loading">Loading...</div>;
+        return (
+            <div className="loading-container">
+                <div className="spinner"></div>
+            </div>
+        );
     }
 
     return (
         <div className="dashboard">
+            <section className="stats-row">
+                <div className="stat-card">
+                    <div className="stat-icon diagram">
+                        <BarChart2 size={18} />
+                    </div>
+                    <div className="stat-content">
+                        <span className="stat-value">{diagrams.length}</span>
+                        <span className="stat-label">Diagrams</span>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon document">
+                        <FileText size={18} />
+                    </div>
+                    <div className="stat-content">
+                        <span className="stat-value">{documents.length}</span>
+                        <span className="stat-label">Docs</span>
+                    </div>
+                </div>
+            </section>
+
             <section className="quick-actions">
-                <h2>Quick Actions</h2>
+                <h2 className="section-title">Quick Actions</h2>
                 <div className="actions-grid">
-                    <button className="action-btn primary" onClick={handleCreateDiagram}>
-                        <span className="icon">📊</span>
-                        <div className="action-content">
-                            <span className="action-title">New Diagram</span>
-                            <span className="action-desc">Create a diagram</span>
+                    <button className="action-card primary" onClick={handleCreateDiagram}>
+                        <div className="action-icon-wrapper">
+                            <Plus size={20} />
+                        </div>
+                        <div className="action-details">
+                            <span className="action-name">New Diagram</span>
+                            <span className="action-hint">Flowcharts, Sequence...</span>
                         </div>
                     </button>
-                    <button className="action-btn" onClick={handleCreateDocument}>
-                        <span className="icon">📝</span>
-                        <div className="action-content">
-                            <span className="action-title">New Document</span>
-                            <span className="action-desc">Write documentation</span>
+                    <button className="action-card" onClick={handleCreateDocument}>
+                        <div className="action-icon-wrapper">
+                            <FileText size={20} />
+                        </div>
+                        <div className="action-details">
+                            <span className="action-name">New Document</span>
+                            <span className="action-hint">Markdown editor</span>
                         </div>
                     </button>
-                    <button className="action-btn" onClick={handleAnalyzeRepo}>
-                        <span className="icon">🔗</span>
-                        <div className="action-content">
-                            <span className="action-title">Analyze Repo</span>
-                            <span className="action-desc">Visualize code</span>
+                    <button className="action-card" onClick={handleAnalyzeRepo}>
+                        <div className="action-icon-wrapper">
+                            <Code2 size={20} />
+                        </div>
+                        <div className="action-details">
+                            <span className="action-name">Analyze Repo</span>
+                            <span className="action-hint">Visualize codebase</span>
                         </div>
                     </button>
                 </div>
             </section>
 
-            <section className="stats">
-                <div className="stat-card">
-                    <span className="stat-value">{diagrams.length}</span>
-                    <span className="stat-label">Diagrams</span>
-                </div>
-                <div className="stat-card">
-                    <span className="stat-value">{documents.length}</span>
-                    <span className="stat-label">Documents</span>
-                </div>
-            </section>
-
-            <section className="recent">
-                <h2>Recent</h2>
+            <section className="recent-section">
+                <h2 className="section-title">Recent Activity</h2>
                 {recentItems.length === 0 ? (
-                    <p className="empty-state">No recent items yet. Create your first diagram or document!</p>
+                    <div className="empty-state">
+                        <Clock size={24} />
+                        <p>No recent activity</p>
+                    </div>
                 ) : (
                     <div className="recent-list">
                         {recentItems.slice(0, 5).map((item) => {
@@ -125,16 +155,17 @@ const Dashboard: React.FC<DashboardProps> = ({ settings }) => {
                             if (!details) return null;
 
                             return (
-                                <div key={`${item.type}-${item.id}`} className="recent-item">
-                                    <span className="recent-icon">
-                                        {item.type === 'diagram' ? '📊' : '📝'}
-                                    </span>
-                                    <div className="recent-info">
-                                        <span className="recent-title">{details.title}</span>
-                                        <span className="recent-time">
+                                <div key={`${item.type}-${item.id}`} className="recent-row">
+                                    <div className={`row-icon ${item.type}`}>
+                                        {item.type === 'diagram' ? <BarChart2 size={16} /> : <FileText size={16} />}
+                                    </div>
+                                    <div className="row-content">
+                                        <span className="row-title">{details.title}</span>
+                                        <span className="row-date">
                                             {new Date(details.updatedAt).toLocaleDateString()}
                                         </span>
                                     </div>
+                                    <ChevronRight size={14} className="row-arrow" />
                                 </div>
                             );
                         })}

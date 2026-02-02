@@ -1,4 +1,13 @@
 import React from 'react';
+import {
+    Palette,
+    Layout,
+    Cpu,
+    Key,
+    RefreshCw,
+    Trash2,
+    AlertTriangle
+} from 'lucide-react';
 import type { Settings as SettingsType } from '../../utils/storage';
 
 interface SettingsProps {
@@ -9,11 +18,14 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     return (
         <div className="settings">
-            <h2>Settings</h2>
+            <h2 className="section-title">Settings</h2>
 
-            <section className="settings-section">
-                <h3>Appearance</h3>
-                <div className="setting-item">
+            <div className="settings-group">
+                <div className="group-header">
+                    <Palette size={16} />
+                    <h3>Appearance</h3>
+                </div>
+                <div className="setting-row">
                     <label htmlFor="theme">Theme</label>
                     <select
                         id="theme"
@@ -21,15 +33,18 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         onChange={(e) => onUpdate({ theme: e.target.value as 'light' | 'dark' })}
                     >
                         <option value="light">Light</option>
-                        <option value="dark">Dark</option>
+                        <option value="dark">Dark (OSConnect)</option>
                     </select>
                 </div>
-            </section>
+            </div>
 
-            <section className="settings-section">
-                <h3>Diagrams</h3>
-                <div className="setting-item">
-                    <label htmlFor="defaultDiagramType">Default Diagram Type</label>
+            <div className="settings-group">
+                <div className="group-header">
+                    <Layout size={16} />
+                    <h3>Diagrams</h3>
+                </div>
+                <div className="setting-row">
+                    <label htmlFor="defaultDiagramType">Default Type</label>
                     <select
                         id="defaultDiagramType"
                         value={settings.defaultDiagramType}
@@ -41,66 +56,74 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         <option value="plantuml">PlantUML</option>
                     </select>
                 </div>
-            </section>
+            </div>
 
-            <section className="settings-section">
-                <h3>AI Provider</h3>
-                <div className="setting-item">
-                    <label htmlFor="aiProvider">Provider</label>
-                    <select
-                        id="aiProvider"
-                        value={settings.aiProvider}
-                        onChange={(e) =>
-                            onUpdate({ aiProvider: e.target.value as 'openai' | 'anthropic' | 'custom' })
-                        }
-                    >
-                        <option value="openai">OpenAI</option>
-                        <option value="anthropic">Anthropic (Claude)</option>
-                        <option value="custom">Custom</option>
-                    </select>
+            <div className="settings-group">
+                <div className="group-header">
+                    <Cpu size={16} />
+                    <h3>AI Provider</h3>
                 </div>
-                <div className="setting-item">
-                    <label htmlFor="apiKey">API Key</label>
-                    <input
-                        id="apiKey"
-                        type="password"
-                        value={settings.apiKey || ''}
-                        onChange={(e) => onUpdate({ apiKey: e.target.value })}
-                        placeholder="Enter your API key"
-                    />
-                    <small className="setting-hint">
-                        Your API key is stored locally and never shared
-                    </small>
+                <div className="setting-column">
+                    <div className="input-group">
+                        <label htmlFor="aiProvider">Provider</label>
+                        <select
+                            id="aiProvider"
+                            value={settings.aiProvider}
+                            onChange={(e) =>
+                                onUpdate({ aiProvider: e.target.value as 'openai' | 'anthropic' | 'custom' })
+                            }
+                        >
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label htmlFor="apiKey">API Key <Key size={12} /></label>
+                        <input
+                            id="apiKey"
+                            type="password"
+                            value={settings.apiKey || ''}
+                            onChange={(e) => onUpdate({ apiKey: e.target.value })}
+                            placeholder="sk-..."
+                        />
+                    </div>
                 </div>
-            </section>
+            </div>
 
-            <section className="settings-section">
-                <h3>Sync</h3>
-                <div className="setting-item checkbox">
+            <div className="settings-group">
+                <div className="group-header">
+                    <RefreshCw size={16} />
+                    <h3>Sync</h3>
+                </div>
+                <div className="setting-row checkbox">
+                    <label htmlFor="autoSync">Auto-sync devices</label>
                     <input
                         id="autoSync"
                         type="checkbox"
                         checked={settings.autoSync}
                         onChange={(e) => onUpdate({ autoSync: e.target.checked })}
                     />
-                    <label htmlFor="autoSync">Auto-sync across devices</label>
                 </div>
-            </section>
+            </div>
 
-            <section className="settings-section danger-zone">
-                <h3>Danger Zone</h3>
+            <div className="settings-group danger">
+                <div className="group-header">
+                    <AlertTriangle size={16} />
+                    <h3>Danger Zone</h3>
+                </div>
                 <button
-                    className="btn-danger"
+                    className="btn-danger-outline"
                     onClick={() => {
-                        if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
-                            // TODO: Implement clear all data
+                        if (confirm('Clear all data?')) {
                             console.log('Clear all data');
                         }
                     }}
                 >
+                    <Trash2 size={14} />
                     Clear All Data
                 </button>
-            </section>
+            </div>
         </div>
     );
 };

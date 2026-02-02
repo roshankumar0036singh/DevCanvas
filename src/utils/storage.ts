@@ -85,7 +85,7 @@ class StorageManager {
         const data = await this.get(['settings']);
         return (
             data.settings || {
-                theme: 'light',
+                theme: 'dark',
                 aiProvider: 'openai',
                 autoSync: true,
                 defaultDiagramType: 'mermaid',

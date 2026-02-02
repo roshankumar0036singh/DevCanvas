@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Settings as SettingsIcon, Github } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import storage from '../utils/storage';
@@ -35,33 +36,38 @@ const App: React.FC = () => {
     return (
         <div className={`app theme-${settings.theme}`}>
             <header className="header">
-                <div className="header-top">
+                <div className="header-brand">
+                    <div className="brand-logo">DC</div>
                     <h1>DevCanvas</h1>
                 </div>
-                <nav className="nav">
+                <nav className="nav-tabs">
                     <button
-                        className={`nav-btn ${currentView === 'dashboard' ? 'active' : ''}`}
+                        className={`nav-tab ${currentView === 'dashboard' ? 'active' : ''}`}
                         onClick={() => setCurrentView('dashboard')}
+                        title="Dashboard"
                     >
-                        📊 Dashboard
+                        <LayoutDashboard size={18} />
+                        <span>Dashboard</span>
                     </button>
                     <button
-                        className={`nav-btn ${currentView === 'settings' ? 'active' : ''}`}
+                        className={`nav-tab ${currentView === 'settings' ? 'active' : ''}`}
                         onClick={() => setCurrentView('settings')}
+                        title="Settings"
                     >
-                        ⚙️ Settings
+                        <SettingsIcon size={18} />
+                        <span>Settings</span>
                     </button>
                 </nav>
             </header>
 
-            <main className="main">
+            <main className="main-content">
                 {currentView === 'dashboard' && <Dashboard settings={settings} />}
                 {currentView === 'settings' && (
                     <Settings settings={settings} onUpdate={handleSettingsUpdate} />
                 )}
             </main>
 
-            <footer className="footer">
+            <footer className="footer-bar">
                 <span className="version">v0.1.0</span>
                 <a
                     href="https://github.com/devcanvas/devcanvas"
@@ -69,7 +75,8 @@ const App: React.FC = () => {
                     rel="noopener noreferrer"
                     className="github-link"
                 >
-                    GitHub
+                    <Github size={14} />
+                    <span>Source</span>
                 </a>
             </footer>
         </div>

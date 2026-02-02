@@ -11,7 +11,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         // Initialize storage with default settings
         chrome.storage.sync.set({
             settings: {
-                theme: 'light',
+                theme: 'dark',
                 aiProvider: 'openai',
                 autoSync: true,
                 defaultDiagramType: 'mermaid',
