@@ -141,6 +141,207 @@ Notes...
 - [ ] Person A to do X by [Date]
 - [ ] Person B to do Y by [Date]
 `
+    },
+    {
+        id: 'adr',
+        name: 'Architecture Decision Record',
+        description: 'Capture significant architectural decisions',
+        content: `# ADR: [Title]
+
+## Status
+Proposed / Accepted / Deprecated
+
+## Context
+What is the issue that we're seeing that is motivating this decision or change?
+
+## Decision
+What is the change that we're proposing and/or doing?
+
+## Consequences
+### Positive
+- Benefit 1
+- Benefit 2
+
+### Negative
+- Drawback 1
+- Drawback 2
+`
+    },
+    {
+        id: 'prd',
+        name: 'Product Requirement Doc',
+        description: 'Define requirements for a new product feature',
+        content: `# PRD: [Feature Name]
+
+## Problem Alignment
+Why are we doing this? What customer problem does it solve?
+
+## User Stories
+- As a **user**, I want to **action**, so that **benefit**.
+- As a **admin**, I want to **action**, so that **benefit**.
+
+## Functional Requirements
+1. The system shall...
+2. The user can...
+
+## Non-Functional Requirements
+- Performance: < 200ms latency
+- Scalability: Support 10k users
+`
+    },
+    {
+        id: 'post-mortem',
+        name: 'Incident Post-Mortem',
+        description: 'Analyze and learn from incidents',
+        content: `# Post-Mortem: [Incident Title]
+
+**Date:** [Date]
+**Impact:** [Low/Medium/High]
+**Root Cause:** [Brief Summary]
+
+## Timeline
+- **10:00 UTC**: Alert triggered
+- **10:15 UTC**: Engineer acknowledged
+- **10:30 UTC**: Fix deployed
+
+## What went wrong?
+Detailed technical explanation.
+
+## What went well?
+- Detection was fast
+- Team communication
+
+## Action Items
+- [ ] Fix bug in X
+- [ ] Add monitoring for Y
+`
+    },
+    {
+        id: 'release-notes',
+        name: 'Release Notes',
+        description: 'Document changes for a new version',
+        content: `# Release Notes v[x.y.z]
+
+## 🚀 New Features
+- Feature A: Description
+- Feature B: Description
+
+## 🐛 Bug Fixes
+- Fixed crash on login
+- Resolved UI glitch
+
+## 💔 Breaking Changes
+- API Endpoint X changed to Y
+`
+    },
+    {
+        id: 'sprint-retro',
+        name: 'Sprint Retrospective',
+        description: 'Review the past sprint with the team',
+        content: `# Sprint Retrospective: [Sprint Name]
+
+## Start
+- New tools?
+- New processes?
+
+## Stop
+- What isn't working?
+- Bottlenecks?
+
+## Continue
+- What is working well?
+- Team wins?
+
+## Action Items
+- [ ] Improve CI pipeline
+`
+    },
+    {
+        id: 'user-research',
+        name: 'User Research Plan',
+        description: 'Plan user interviews and testing',
+        content: `# User Research Plan
+
+## Objectives
+What do we want to learn?
+
+## Methodology
+- [ ] User Interviews (Qualitative)
+- [ ] A/B Testing (Quantitative)
+
+## Participants
+- Segment A: Power users
+- Segment B: New sign-ups
+
+## Scripts / Questions
+1. How do you currently solve X?
+2. What is your biggest pain point with Y?
+`
+    },
+    {
+        id: 'db-design',
+        name: 'Database Design',
+        description: 'Schema design and relationships',
+        content: `# Database Design: [Module]
+
+## Entities
+### User
+- \`id\` (UUID, PK)
+- \`email\` (VARCHAR, Unique)
+
+### Order
+- \`id\` (UUID, PK)
+- \`user_id\` (UUID, FK)
+
+## Relationships
+- User -> Order (One-to-Many)
+
+## Indexing Strategy
+- Index on \`email\` for lookups
+- Compound index on \`status\` + \`created_at\`
+`
+    },
+    {
+        id: 'onboarding',
+        name: 'Onboarding Guide',
+        description: 'Guide for new team members',
+        content: `# Welcome to [Team/Project]!
+
+## 🏁 Getting Started
+1. Clone the repo
+2. Run \`npm install\`
+3. Read the \`README.md\`
+
+## 🛠️ Tools We Use
+- **Jira**: Task tracking
+- **Slack**: #dev-channel
+- **DevCanvas**: Documentation
+
+## 📚 Key Resources
+- [Architecture Doc](./arch.md)
+- [API Utils](./utils.md)
+`
+    },
+    {
+        id: 'style-guide',
+        name: 'Style Guide',
+        description: 'Code style and conventions',
+        content: `# Engineering Style Guide
+
+## Naming Conventions
+- **Variables**: camelCase
+- **Components**: PascalCase
+- **Constants**: UPPER_CASE
+
+## Git Workflow
+- \`main\` is protected
+- Feature branches: \`feat/name\`
+- Commit messages: Conventional Commits (\`feat: ...\`)
+
+## Best Practices
+- Verify inputs
+- Handle errors gracefully
+`
     }
 ];
 
@@ -199,8 +400,6 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
         description: 'ER Diagram for a standard authentication system.',
         type: 'mermaid',
         code: `erDiagram
-    USERS ||--o{ SESSIONS : has
-    USERS ||--o{ POSTS : writes
     USERS {
         int id PK
         string email
@@ -218,7 +417,10 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
         int user_id FK
         string title
         text content
-    }`
+    }
+
+    USERS ||--o{ SESSIONS : has
+    USERS ||--o{ POSTS : writes`
     },
 
     // Algorithms
@@ -252,5 +454,94 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
     Node2 --> Node3[Data: 30 | Next]
     Node3 --> Null[Null]
   end`
+    },
+    // Project Management
+    {
+        id: 'gantt-chart',
+        category: 'General',
+        name: 'Project Gantt Chart',
+        description: 'Project timeline and milestones.',
+        type: 'mermaid',
+        code: `gantt
+    title Project Timeline
+    dateFormat  YYYY-MM-DD
+    section Design
+    Research           :done,    des1, 2024-01-01, 7d
+    Prototyping        :active,  des2, 2024-01-08, 5d
+    section Dev
+    Backend Impl       :         dev1, 2024-01-15, 10d
+    Frontend Impl      :         dev2, after dev1, 7d
+    section Test
+    QA                 :         test1, after dev2, 5d`
+    },
+    {
+        id: 'git-graph',
+        category: 'General',
+        name: 'Git Branching Strategy',
+        description: 'Visualization of git commits and branches.',
+        type: 'mermaid',
+        code: `gitGraph
+commit
+commit
+    branch develop
+    checkout develop
+commit
+commit
+    branch feature / auth
+    checkout feature / auth
+commit
+commit
+    checkout develop
+    merge feature / auth
+    checkout main
+    merge develop
+    commit tag: "v1.0"`
+    },
+    {
+        id: 'mind-map',
+        category: 'General',
+        name: 'Brainstorming Mind Map',
+        description: 'Hierarchical mind map for ideas.',
+        type: 'mermaid',
+        code: `mindmap
+root((DevCanvas))
+Features
+Visualizations
+Flowcharts
+        Sequence Diagrams
+      AI Analysis
+        Code Audits
+        Bug Detection
+    Tech Stack
+React
+TypeScript
+Mermaid
+OpenAI`
+    },
+    {
+        id: 'state-diagram',
+        category: 'System Design',
+        name: 'Login State Machine',
+        description: 'State transitions for user authentication.',
+        type: 'mermaid',
+        code: `stateDiagram - v2
+[*]-- > Idle
+Idle-- > Authenticating: Click Login
+Authenticating-- > Authenticated: Success
+Authenticating-- > Error: Failure
+Error-- > Idle: Retry
+Authenticated-- > [*]: Logout`
+    },
+    {
+        id: 'pie-chart',
+        category: 'General',
+        name: 'Tech Stack Distribution',
+        description: 'Pie chart for data visualization.',
+        type: 'mermaid',
+        code: `pie title Tech Stack Usage
+"TypeScript" : 60
+"React" : 25
+"CSS" : 10
+"HTML" : 5`
     }
 ];
