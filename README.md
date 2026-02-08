@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="./public/icons/logo.png" width="160" height="160" alt="DevCanvas Logo">
+  <img src="./public/icons/logo-icon.png" width="120" height="120" alt="DevCanvas Logo">
   
   <h1>DevCanvas</h1>
   
-  <p><strong>Turn Code into Visual Intelligence.</strong></p>
-  <p>The ultimate browser extension for engineering teams to document, visualize, and audit codebases instantly.</p>
+  <p><strong>Visualize. Document. Master.</strong></p>
+  <p>The ultimate browser extension for engineering teams to turn GitHub repositories into visual intelligence instantly.</p>
 
   <p>
     <a href="https://github.com/roshankumar0036singh/DevCanvas/releases/latest">
@@ -36,9 +36,9 @@
 
 ## 🚀 Overview
 
-**DevCanvas** transforms the way developers interact with code on GitHub. By combining **Mermaid.js** visualization with **Advanced AI analysis**, DevCanvas allows you to generate architecture diagrams, sequence flows, and health audits directly from your browser.
+**DevCanvas** transforms your GitHub experience by replacing static file lists with dynamic visual maps. Leveraging **advanced AI**, it generates architectural diagrams, health audits, and sequence flows directly within your browser, giving you immediate insight into complex codebases.
 
-Whether you are debugging a complex PR or onboarding to a new repository, DevCanvas gives you the **visual context** you need.
+Whether you're debugging a PR, onboarding new team members, or documenting legacy code, DevCanvas provides the visual context you need in seconds.
 
 ---
 
@@ -48,60 +48,48 @@ Whether you are debugging a complex PR or onboarding to a new repository, DevCan
 
 | 🔍 **Visual Analysis** | 🛡️ **Smart Audits** | 📦 **Deep Context** |
 | :--- | :--- | :--- |
-| **Flowcharts**<br>Visualize component relationships & logic flow. | **Bug Reports**<br>AI scans for logic errors & security flaws. | **Recursive Tree**<br>Access 100% of files, even in large repos. |
-| **Sequence Diagrams**<br>Map out service interactions step-by-step. | **Health Heatmaps**<br>Spot technical debt instantly. | **Intelligent Truncation**<br>Smart context management for AI limits. |
-| **Repo Architecture**<br>Get a bird's-eye view of the entire codebase. | **Private Repo Support**<br>Secure analysis via Personal Access Token. | **Markdown Export**<br>Save diagrams & reports directly to files. |
+| **Instant Diagrams**: Generate Flowcharts, Sequence Diagrams, and Class Maps from any repo. | **Health Checks**: Identify code smells, circular dependencies, and security risks visually. | **File Structure**: Navigate large monorepos with an interactive, categorized file tree. |
+| **AI-Powered**: Understand "What does this file do?" with one-click AI summaries. | **PR Reviews**: Visualize changes in Pull Requests to catch architectural drift. | **Premium Docs**: Export diagrams and documentation to Markdown, PDF, or PNG. |
 
 </div>
 
----
+## � Installation
 
-## 🛠️ Installation
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/roshankumar0036singh/DevCanvas.git
+   cd DevCanvas
+   ```
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/roshankumar0036singh/DevCanvas.git
-cd DevCanvas
-```
+2. **Install Dependencies**
+   ```bash
+   npm install
+   ```
 
-### 2. Install Dependencies
-```bash
-npm install
-```
+3. **Build Extension**
+   ```bash
+   npm run build:dev
+   ```
 
-### 3. Build Extension
-```bash
-npm run build:dev
-```
+4. **Load in Chrome**
+   - Open `chrome://extensions/`
+   - Enable **Developer mode** (top right)
+   - Click **Load unpacked**
+   - Select the `dist` folder in the project directory.
 
-### 4. Load in Chrome/Edge
-1. Open `chrome://extensions/`
-2. Enable **Developer Mode** (top right).
-3. Click **Load unpacked**.
-4. Select the `dist` folder.
+## �️ Usage
 
----
-
-## 📖 Usage Guide
-
-1. **Navigate to GitHub**: Go to any public or private repository.
-2. **Open DevCanvas**: Click the extension icon or use the side panel.
-3. **Analyze**: Select "Flowchart", "Health Check", or "Bug Report".
-4. **Authenticate (Optional)**: If you hit rate limits or use private repos, enter your GitHub Token when prompted.
-
----
+1. Navigate to any GitHub repository.
+2. Click the **DevCanvas** icon in the browser toolbar (or open the side panel).
+3. Choose an analysis mode:
+   - **Flowchart**: Visualize repository structure.
+   - **Health Map**: Audit code quality.
+   - **Issues**: Analyze open issues with AI.
+   - **README**: Generate or enhance documentation.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
+We welcome contributions! Please see our [CONTRIBUTING.md](./CONTRIBUTING.md) for details on how to get started.
 
 ## 📄 License
 

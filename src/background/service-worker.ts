@@ -204,20 +204,20 @@ async function handleFetchPullRequestDiff(prUrl?: string): Promise<MessageRespon
 // Context menu integration
 chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
-        id: 'devcanvas-create-diagram',
+        id: 'DevCanvas-create-diagram',
         title: 'Create Diagram from Selection',
         contexts: ['selection'],
     });
 
     chrome.contextMenus.create({
-        id: 'devcanvas-analyze-page',
+        id: 'DevCanvas-analyze-page',
         title: 'Analyze Current Page',
         contexts: ['page'],
     });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'devcanvas-create-diagram' && info.selectionText) {
+    if (info.menuItemId === 'DevCanvas-create-diagram' && info.selectionText) {
         // Future: Open diagram creator with selected text
         console.log('Create diagram from:', info.selectionText);
 
@@ -227,7 +227,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
             data: { text: info.selectionText },
             target: 'popup',
         });
-    } else if (info.menuItemId === 'devcanvas-analyze-page' && tab?.id) {
+    } else if (info.menuItemId === 'DevCanvas-analyze-page' && tab?.id) {
         handleAnalyzePage(tab.id);
     }
 });
