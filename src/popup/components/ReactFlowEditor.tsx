@@ -13,7 +13,12 @@ import ReactFlow, {
     EdgeLabelRenderer,
     BaseEdge,
     EdgeProps,
-    getSmoothStepPath
+    getSmoothStepPath,
+    BezierEdge,
+    StraightEdge,
+    StepEdge,
+    SmoothStepEdge,
+    SimpleBezierEdge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -179,6 +184,11 @@ const EditableEdge = ({
 
 const edgeTypes = {
     editable: EditableEdge,
+    default: BezierEdge,
+    straight: StraightEdge,
+    step: StepEdge,
+    smoothstep: SmoothStepEdge,
+    simplebezier: SimpleBezierEdge
 };
 
 interface ReactFlowEditorProps {
