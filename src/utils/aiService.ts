@@ -2,7 +2,14 @@
  * AI Service - Integration with AI providers for README enhancement
  */
 
-import type { Settings } from './storage';
+import { Settings } from './storage';
+
+function truncateStructure(structure: string, maxLines = 2000): string {
+    const lines = structure.split('\n');
+    if (lines.length <= maxLines) return structure;
+    return lines.slice(0, maxLines).join('\n') + `\n...(Truncated ${lines.length - maxLines} more files)...`;
+}
+
 
 export interface AIProvider {
     name: string;
@@ -266,6 +273,9 @@ export async function visualizeRepository(
     const customInstruction = instruction ? `\nUSER FOCUS: "${instruction}"` : '';
     const additionalContext = extraContext ? `\nADDITIONAL CODE CONTEXT:\n${extraContext}` : '';
 
+    // Truncate structure to prevent token overflow
+    const truncatedStructure = truncateStructure(fileStructure);
+
     let taskDescription = `Your goal is to create a high-level ${diagramType} diagram that represents the ARCHITECTURE and LOGICAL FLOW of the repository.`;
     let healthInstructions = '';
     let sequenceInstructions = '';
@@ -284,7 +294,8 @@ CRITICAL: HEALTH MAP INSTRUCTIONS
 5. EVIDENCE IN DIAGRAM: For non-healthy nodes, attach info nodes: (node_id -- "Evidence" --> info_id[Snippet...])
 6. Apply classes using: \`class node_id health-critical\`
 7. NO SEQUENCE DIAGRAM TOKENS: Do NOT use 'note right of', 'participant', or 'loop'.
-8. LEGEND (Optional): If you add a legend, it MUST be inside a \`subgraph Legend_Sub [Legend]\` block at the bottom. Never add orphaned status nodes.`;
+8. LEGEND (Optional): If you add a legend, it MUST be inside a \`subgraph Legend_Sub [Legend]\` block at the bottom. Never add orphaned status nodes.
+9. NO SEQUENCE ARROWS: Do NOT use '->>', '->', or '-.->>'. Use ONLY standard flowchart arrows: '-->', '-.->', '==>'.`;
     } else if (diagramType === 'sequenceDiagram') {
         taskDescription = `Your goal is to create a **LOGIC FLOW SEQUENCE** of the repository using a sequenceDiagram.`;
         sequenceInstructions = `
@@ -300,7 +311,7 @@ CRITICAL: SEQUENCE DIAGRAM RULES
     const prompt = `You are a Senior Software Architect. ${taskDescription}
 
 Repo Structure:
-${fileStructure}
+${truncatedStructure}
 ${additionalContext}
 ${customInstruction}
 ${healthInstructions}
@@ -309,16 +320,17 @@ ${sequenceInstructions}
 GOAL: Map the files and folders to logical components or services.
 
 CRITICAL RULES:
-1. DO NOT just list every file. Group them into logical blocks or subgraphs.
-2. REPRESENT Relationships: Show how components interact.
 3. USE Semantic Labels: Use human-readable names like "Auth Service" instead of filenames.
 4. INFER from context: Include external services like 'Firebase', 'AWS', or 'Stripe' if mentioned.
-5. CRITICAL: Sanitize ALL Node/Class IDs. Use ONLY Alphanumeric + Underscore.
+5. CRITICAL: Sanitize ALL Node/Class IDs. Use ONLY Alphanumeric + Underscore. DO NOT use array syntax like 'Type[]'.
    - Use Labels for display: \`node_id["Logical Name"]\` (CRITICAL: No space before '[').
    - ALWAYS wrap labels in double quotes "", especially if they contain special characters like | (pipes), brackets, or colons.
    - ALWAYS close all brackets and quotes.
 
-IMPORTANT: Return ONLY valid Mermaid code starting with '${diagramType}'. No conversations.`;
+IMPORTANT: Return ONLY valid Mermaid code starting with '${diagramType}'.
+- DONT use conversational text like "Here is the diagram" or "This code represents".
+- DONT add any explanations after the code block.
+- Just the raw code.`;
 
     let content = '';
     switch (provider) {
@@ -353,11 +365,14 @@ export async function analyzeRepoIssues(
     const instruction = customInstruction ? `\nUSER FOCUS/INSTRUCTION: "${customInstruction}"` : '';
     const additionalContext = extraContext ? `\nADDITIONAL CODE CONTEXT (README/Package.json):\n${extraContext}` : '';
 
+    // Truncate structure
+    const truncatedStructure = truncateStructure(fileStructure);
+
     const prompt = `You are a Senior Software Engineer and Security Lead.
 Your task is to analyze the following repository structure and provided code context to identify ACTUAL issues, logic errors, or missing features.
 
 Repo Structure:
-${fileStructure}
+${truncatedStructure}
 ${additionalContext}
 ${instruction}
 
@@ -525,6 +540,10 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
         // This fixes the "got SQS" (Square Bracket Start) parse error.
         fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\s+(\[|{|\(|\(\(|\{\{|\[\()/g, '$1$2');
 
+        // Sanitize Node IDs: Remove [] from potential IDs (if they appear before arrows or open brackets)
+        // Fixes: DevCanvas_Repository[] --> ...
+        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\]/g, '$1_Array');
+
         fromDiagram = fromDiagram.replace(/\|>/g, '-->');
         fromDiagram = fromDiagram.replace(/<\|/g, '<--');
 
@@ -564,7 +583,14 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
 
         // Force-strip Sequence Diagram 'note' tokens if in flowchart/graph mode
         if (foundKeyword.startsWith('graph') || foundKeyword.startsWith('flowchart')) {
-            fromDiagram = fromDiagram.replace(/^\s*note\s+(?:right of|left of|over)\s+.+$/gm, '');
+            if (foundKeyword.startsWith('graph') || foundKeyword.startsWith('flowchart')) {
+                fromDiagram = fromDiagram.replace(/^\s*note\s+(?:right of|left of|over)\s+.+$/gm, '');
+
+                // Aggressive Cleanup: Remove conversational lines that might have appeared
+                // Example: "This Mermaid code represents..."
+                fromDiagram = fromDiagram.replace(/^(?:This|Here|The|Note:|Disclaimer:).+$/gm, '');
+                fromDiagram = fromDiagram.replace(/^.*Mermaid code.*$/gm, '');
+            }
         }
 
         // If there are classDef or style directives before the diagram type, move them after
