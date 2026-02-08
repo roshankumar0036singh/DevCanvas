@@ -88,6 +88,12 @@ const RectangleNode: React.FC<NodeProps> = ({ id, data, selected }) => {
             {/* Top Handles */}
             <Handle type="target" position={Position.Top} id="top-target" style={handleStyle} />
             <Handle type="source" position={Position.Top} id="top-source" style={handleStyle} />
+            <Handle type="source" position={Position.Bottom} id="bottom-source" style={handleStyle} />
+            <Handle type="target" position={Position.Bottom} id="bottom-target" style={handleStyle} />
+            <Handle type="source" position={Position.Right} id="right-source" style={handleStyle} />
+            <Handle type="target" position={Position.Right} id="right-target" style={handleStyle} />
+            <Handle type="source" position={Position.Left} id="left-source" style={handleStyle} />
+            <Handle type="target" position={Position.Left} id="left-target" style={handleStyle} />
 
             {/* Label - Safe HTML rendering or Input */}
             {data.imageUrl && (
