@@ -25,12 +25,12 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/devcanvas/devcanvas.git"
+        "url": "https://github.com/roshankumar0036singh/DevCanvas.git"
     },
     "bugs": {
-        "url": "https://github.com/devcanvas/devcanvas/issues"
+        "url": "https://github.com/roshankumar0036singh/DevCanvas/issues"
     },
-    "homepage": "https://github.com/devcanvas/devcanvas#readme",
+    "homepage": "https://github.com/roshankumar0036singh/DevCanvas#readme",
     "devDependencies": {
         "@babel/core": "^7.23.0",
         "@babel/preset-env": "^7.23.0",
