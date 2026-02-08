@@ -14,6 +14,7 @@ export interface Settings {
     apiKey?: string; // Deprecated
     autoSync: boolean;
     defaultDiagramType: 'mermaid' | 'plantuml';
+    githubToken?: string;
 }
 
 export interface Diagram {

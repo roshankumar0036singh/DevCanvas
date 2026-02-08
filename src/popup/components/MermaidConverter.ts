@@ -20,6 +20,10 @@ export interface FlowNode extends Node {
         isParticipant?: boolean;
         participantId?: string;
         isAnchor?: boolean;
+        isSequenceNote?: boolean;
+        notePosition?: 'left of' | 'right of' | 'over';
+        noteParticipants?: string[];
+        order?: number;
         attributes?: Array<{ type: string; name: string; constraint?: string }>;
     };
 }
@@ -118,7 +122,7 @@ export class MermaidConverter {
             sequenceEdges.sort((a, b) => (a.data?.order || 0) - (b.data?.order || 0));
 
             // Group edges by message order to avoid duplicates (we have 2 edges per message now)
-            const messageMap = new Map<number, { src: string, tgt: string, arrow: string, label: string }>();
+            const messageMap = new Map<number, any>();
 
             sequenceEdges.forEach(edge => {
                 const order = edge.data?.order;
@@ -131,19 +135,55 @@ export class MermaidConverter {
                     const tgtId = idMap.get(rawTgt) || rawTgt?.replace(/[^a-zA-Z0-9_]/g, '_');
 
                     const arrow = edge.data?.originalArrow || '->>';
-                    const label = edge.label ? `: ${String(edge.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}` : '';
                     if (srcId && tgtId) {
-                        messageMap.set(order, { src: srcId, tgt: tgtId, arrow, label });
+                        messageMap.set(order, { type: 'message', src: srcId, tgt: tgtId, arrow, label: edge.label });
                     }
                 }
             });
 
-            // Export messages in order
+            // Collect Notes
+            const noteNodes = nodes.filter(n => n.data.isSequenceNote);
+            noteNodes.forEach(note => {
+                const order = note.data.order || 0;
+                const position = note.data.notePosition || 'over';
+                const rawParticipants = note.data.noteParticipants || [];
+                const participants = rawParticipants.map((p: string) => idMap.get(p) || p.replace(/[^a-zA-Z0-9_]/g, '_'));
+
+                messageMap.set(order, {
+                    type: 'note',
+                    position,
+                    participants,
+                    label: note.data.label
+                });
+            });
+
+            // Export messages and notes in order
             Array.from(messageMap.entries())
                 .sort(([a], [b]) => a - b)
-                .forEach(([_, msg]) => {
-                    code += `    ${msg.src}${msg.arrow}${msg.tgt}${msg.label}\n`;
+                .forEach(([_, item]: [number, any]) => {
+                    if (item.type === 'message') {
+                        const label = item.label ? `: ${String(item.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}` : '';
+                        code += `    ${item.src}${item.arrow}${item.tgt}${label}\n`;
+                    } else if (item.type === 'note') {
+                        const participants = item.participants.join(',');
+                        const label = item.label ? `: ${String(item.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}` : '';
+                        code += `    Note ${item.position} ${participants}${label}\n`;
+                    }
                 });
+
+            // Save layout/dimensions for notes
+            const layoutData: Record<string, any> = {};
+            noteNodes.forEach(node => {
+                if (node.width || node.height || node.style?.width || node.style?.height) {
+                    layoutData[node.id] = {
+                        w: node.width || node.style?.width,
+                        h: node.height || node.style?.height
+                    };
+                }
+            });
+            if (Object.keys(layoutData).length > 0) {
+                code += `\n%% layout: ${JSON.stringify(layoutData)}`;
+            }
         } else if (hasEntities) {
             code = 'erDiagram\n';
             nodes.forEach(node => {
@@ -237,9 +277,20 @@ export class MermaidConverter {
             // For sequence diagrams, use participantId for styling, and skip message nodes
             let styleId = node.id;
             if (isSequence) {
-                if (node.id.startsWith('msg_node_')) return; // Skip message nodes
+                // Skip internal sequence nodes (message nodes, sequence points, lifeline ends)
+                if (node.id.startsWith('msg_node_') || node.id.startsWith('seq_') || node.id.startsWith('end_')) return;
+                if (node.data.isSequenceNote) return; // Skip note nodes (they use generic styling or Note keyword)
+
                 if (node.data.participantId) {
                     styleId = node.data.participantId.replace(/[^a-zA-Z0-9_]/g, '_');
+                } else if (node.id.startsWith('participant_')) {
+                    styleId = node.id.replace('participant_', '').replace(/[^a-zA-Z0-9_]/g, '_');
+                } else {
+                    // It's a node that is not a participant, but we are in sequence mode?
+                    // It shouldn't be here or it's an extra node added by user. 
+                    // If added by user, treat as participant?
+                    // For now, if it doesn't look like a participant, skip style to be safe.
+                    return;
                 }
             }
 
@@ -912,8 +963,8 @@ export class MermaidConverter {
             }
         });
 
-        const messages: { source: string, target: string, label: string, arrow: string }[] = [];
-        // Second pass: Find messages and inferred participants
+        const sequenceItems: any[] = [];
+        // Second pass: Find messages, notes and inferred participants
         lines.forEach(line => {
             const msgMatch = line.match(/^\s*(?:([A-Za-z0-9_.-]+)|"([^"]+)")\s*((?:-+|={2,})>+)\s*(?:([A-Za-z0-9_.-]+)|"([^"]+)")\s*:\s*(.*)/);
             if (msgMatch) {
@@ -922,31 +973,51 @@ export class MermaidConverter {
                 const target = msgMatch[4] || msgMatch[5];
                 const label = msgMatch[6]?.trim() || '';
 
-                if (!participants.has(source)) {
-                    participants.set(source, { label: source, index: participantCount++ });
-                }
-                if (!participants.has(target)) {
-                    participants.set(target, { label: target, index: participantCount++ });
-                }
-                messages.push({ source, target, label, arrow });
+                if (!participants.has(source)) participants.set(source, { label: source, index: participantCount++ });
+                if (!participants.has(target)) participants.set(target, { label: target, index: participantCount++ });
+
+                sequenceItems.push({ type: 'message', source, target, label, arrow });
+                return;
+            }
+
+            const noteMatch = line.match(/^\s*Note\s+(left of|right of|over)\s+(.*?):\s*(.*)/i);
+            if (noteMatch) {
+                const position = noteMatch[1].toLowerCase();
+                const participantsStr = noteMatch[2];
+                const text = noteMatch[3].trim();
+                const noteParticipants = participantsStr.split(',').map(p => p.trim());
+
+                noteParticipants.forEach(p => {
+                    if (!participants.has(p)) participants.set(p, { label: p, index: participantCount++ });
+                });
+
+                sequenceItems.push({ type: 'note', position, participants: noteParticipants, label: text });
             }
         });
 
-        // Metadata for saved styles
+        // Metadata for saved styles and edges
         let savedStyles: Record<string, any> = {};
+        let savedEdges: any[] = [];
+        let savedLayout: Record<string, any> = {};
 
         // Extract metadata comments (layout, styles, edges)
         lines.forEach(line => {
             if (line.trim().startsWith('%% styles:')) {
                 const data = this.safeParse(line.replace('%% styles:', ''), 'object');
                 if (data) savedStyles = data;
+            } else if (line.trim().startsWith('%% edges:')) {
+                const data = this.safeParse(line.replace('%% edges:', ''), 'array');
+                if (data) savedEdges = data;
+            } else if (line.trim().startsWith('%% layout:')) {
+                const data = this.safeParse(line.replace('%% layout:', ''), 'object');
+                if (data) savedLayout = data;
             }
         });
 
         const verticalSpacing = 120; // Space between participants vertically
         const participantWidth = 200;
         const participantHeight = 60;
-        const messageStartX = 250; // X position where messages start
+
 
         // Create simple rectangular participant nodes arranged vertically on the left
         participants.forEach((data, id) => {
@@ -969,90 +1040,8 @@ export class MermaidConverter {
             });
         });
 
-        // Create message nodes positioned to the right of participants
-        messages.forEach((msg, i) => {
-            const sourceParticipant = participants.get(msg.source);
-            const targetParticipant = participants.get(msg.target);
+        // Legacy message node generation removed (handled by layoutSequenceDiagram now)
 
-            if (sourceParticipant && targetParticipant) {
-                // Create a node for the message label
-                const messageNodeId = `msg_node_${i}`;
-                const messageY = Math.min(sourceParticipant.index, targetParticipant.index) * verticalSpacing +
-                    Math.abs(sourceParticipant.index - targetParticipant.index) * verticalSpacing / 2;
-
-                nodes.push({
-                    id: messageNodeId,
-                    type: 'rounded',
-                    position: { x: messageStartX + i * 200, y: messageY },
-                    data: {
-                        label: msg.label || `Message ${i + 1}`,
-                        color: '#0f172a',
-                        strokeColor: '#06b6d4',
-                        strokeStyle: 'dashed',
-                        textColor: '#ffffff',
-                        handleColor: '#00DC82',
-                        strokeWidth: 1
-                    },
-                    style: { width: 150, height: 50 }
-                });
-
-                // Create edges from source participant to message node
-                const sourceNodeId = `participant_${msg.source}`;
-                edges.push({
-                    id: `edge_src_${i}`,
-                    source: sourceNodeId,
-                    target: messageNodeId,
-                    type: 'editable',
-                    animated: msg.arrow.includes('>>'),
-                    style: {
-                        stroke: '#0ea5e9',
-                        strokeWidth: 2,
-                        strokeDasharray: msg.arrow.includes('--') ? '5,5' : '0'
-                    },
-                    markerEnd: {
-                        type: MarkerType.ArrowClosed,
-                        color: '#0ea5e9',
-                        width: 20,
-                        height: 20
-                    },
-                    data: {
-                        isSequenceMessage: true,
-                        originalArrow: msg.arrow,
-                        order: i,
-                        sourceParticipant: msg.source,
-                        targetParticipant: msg.target
-                    }
-                });
-
-                // Create edge from message node to target participant
-                const targetNodeId = `participant_${msg.target}`;
-                edges.push({
-                    id: `edge_tgt_${i}`,
-                    source: messageNodeId,
-                    target: targetNodeId,
-                    type: 'editable',
-                    animated: msg.arrow.includes('>>'),
-                    style: {
-                        stroke: '#0ea5e9',
-                        strokeWidth: 2,
-                        strokeDasharray: msg.arrow.includes('--') ? '5,5' : '0'
-                    },
-                    markerEnd: {
-                        type: MarkerType.ArrowClosed,
-                        color: '#0ea5e9',
-                        width: 20,
-                        height: 20
-                    },
-                    data: {
-                        isSequenceMessage: true,
-                        originalArrow: msg.arrow,
-                        order: i,
-                        sourceParticipant: msg.source,
-                        targetParticipant: msg.target
-                    }
-                });
-            }
-        });
 
         // Apply saved styles from metadata
         if (Object.keys(savedStyles).length > 0) {
@@ -1101,14 +1090,17 @@ export class MermaidConverter {
             }
         });
 
-        return this.layoutSequenceDiagram(nodes, edges, participants, messages);
+        return this.layoutSequenceDiagram(nodes, edges, participants, sequenceItems, savedStyles, savedEdges, savedLayout);
     }
 
     private static layoutSequenceDiagram(
         nodes: FlowNode[],
         _edges: FlowEdge[],
         participants: Map<string, { label: string, index: number }>,
-        messages: { source: string, target: string, label: string, arrow: string }[]
+        items: any[],
+        savedStyles: Record<string, any> = {},
+        savedEdges: any[] = [],
+        savedLayout: Record<string, any> = {}
     ): { nodes: FlowNode[], edges: FlowEdge[] } {
         const layoutNodes: FlowNode[] = [];
         const layoutEdges: FlowEdge[] = [];
@@ -1169,88 +1161,76 @@ export class MermaidConverter {
             previousPoint.set(id, `participant_${id}`);
         });
 
-        messages.forEach((msg, index) => {
-            const srcX = participantX.get(msg.source);
-            const tgtX = participantX.get(msg.target);
+        items.forEach((item, index) => {
+            if (item.type === 'message') {
+                const msg = item;
+                const srcX = participantX.get(msg.source);
+                const tgtX = participantX.get(msg.target);
 
-            if (srcX === undefined || tgtX === undefined) return; // Skip invalid messages
+                if (srcX === undefined || tgtX === undefined) return; // Skip invalid messages
 
-            // Create Sequence Points (Invisible or small dots)
-            const srcNodeId = `seq_${index}_src_${msg.source}`;
-            const tgtNodeId = `seq_${index}_tgt_${msg.target}`;
+                // Create Sequence Points (Invisible or small dots)
+                const srcNodeId = `seq_${index}_src_${msg.source}`;
+                const tgtNodeId = `seq_${index}_tgt_${msg.target}`;
 
-            // Source Point
-            layoutNodes.push({
-                id: srcNodeId,
-                type: 'circle',
-                position: { x: srcX + 90 - 4, y: currentY }, // Center of participant (180/2 = 90) - 4
-                data: { label: '' },
-                style: { width: 0, height: 0, borderRadius: '50%', background: 'transparent', border: 'none', opacity: 0 },
-                zIndex: 5,
-                draggable: false // Points shouldn't be dragged individually? Or maybe vertical drag to reorder?
-            });
+                // Source Point
+                layoutNodes.push({
+                    id: srcNodeId,
+                    type: 'circle',
+                    position: { x: srcX + 90 - 4, y: currentY }, // Offset to center below participant
+                    data: { label: '', isAnchor: true, color: 'transparent', strokeWidth: 0, strokeColor: 'transparent' },
+                    zIndex: 5,
+                    draggable: false // Points shouldn't be dragged individually? Or maybe vertical drag to reorder?
+                });
 
-            // Target Point
-            layoutNodes.push({
-                id: tgtNodeId,
-                type: 'circle',
-                position: { x: tgtX + 90 - 4, y: currentY },
-                data: { label: '' },
-                style: { width: 0, height: 0, borderRadius: '50%', background: 'transparent', border: 'none', opacity: 0 },
-                zIndex: 5,
-                draggable: false
-            });
+                // Target Point
+                layoutNodes.push({
+                    id: tgtNodeId,
+                    type: 'circle',
+                    position: { x: tgtX + 90 - 4, y: currentY },
+                    data: { label: '', isAnchor: true, color: 'transparent', strokeWidth: 0, strokeColor: 'transparent' },
+                    zIndex: 5,
+                    draggable: false
+                });
 
-            // Message Edge (Horizontal)
-            const isLeftToRight = srcX < tgtX;
-            const isSelfLoop = srcX === tgtX;
+                // Message Edge (Horizontal)
+                const isLeftToRight = srcX < tgtX;
+                const isSelfLoop = srcX === tgtX;
 
-            layoutEdges.push({
-                id: `msg_${index}`,
-                source: srcNodeId,
-                target: tgtNodeId,
-                sourceHandle: isSelfLoop ? 'right-source' : (isLeftToRight ? 'right-source' : 'left-source'),
-                targetHandle: isSelfLoop ? 'right-target' : (isLeftToRight ? 'left-target' : 'right-target'),
-                label: msg.label,
-                type: isSelfLoop ? 'default' : 'smoothstep',
-                animated: msg.arrow.includes('--'),
-                style: {
-                    stroke: '#3b82f6',
-                    strokeWidth: 2,
-                    strokeDasharray: msg.arrow.includes('--') ? '5 5' : 'none'
-                },
-                labelStyle: { fill: '#fff', fontWeight: 500, fontSize: 12 },
-                labelBgStyle: { fill: '#1f2937', fillOpacity: 0.8 },
-                data: {
-                    isMessage: true,
-                    arrowType: msg.arrow,
-                    order: index,
-                    sourceParticipant: msg.source,
-                    targetParticipant: msg.target
-                },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' }
-            });
+                const savedEdge = savedEdges.find(e => e.source === srcNodeId && e.target === tgtNodeId);
 
-            // Vertical Lifeline Edges (From previous point to current)
-            const prevSrc = previousPoint.get(msg.source)!;
-            layoutEdges.push({
-                id: `life_${index}_src_${msg.source}`, // unique ID
-                source: prevSrc,
-                target: srcNodeId,
-                sourceHandle: 'bottom-source',
-                targetHandle: 'top-target',
-                type: 'straight',
-                style: { stroke: '#4b5563', strokeWidth: 2, strokeDasharray: '5 5' },
-                animated: false,
-                data: { isLifeline: true }
-            });
-
-            const prevTgt = previousPoint.get(msg.target)!;
-            if (msg.source !== msg.target) {
                 layoutEdges.push({
-                    id: `life_${index}_tgt_${msg.target}`,
-                    source: prevTgt,
+                    id: `msg_${index}`,
+                    source: srcNodeId,
                     target: tgtNodeId,
+                    sourceHandle: isSelfLoop ? 'right-source' : (isLeftToRight ? 'right-source' : 'left-source'),
+                    targetHandle: isSelfLoop ? 'right-target' : (isLeftToRight ? 'left-target' : 'right-target'),
+                    label: msg.label,
+                    type: isSelfLoop ? 'default' : 'smoothstep',
+                    animated: msg.arrow.includes('--'),
+                    style: {
+                        stroke: savedEdge?.style?.stroke || '#3b82f6',
+                        strokeWidth: savedEdge?.style?.strokeWidth || 2,
+                        strokeDasharray: savedEdge?.style?.strokeDasharray || (msg.arrow.includes('--') ? '5,5' : '0')
+                    },
+                    labelStyle: savedEdge?.labelStyle,
+                    labelBgStyle: savedEdge?.labelBgStyle,
+                    data: {
+                        isSequenceMessage: true,
+                        arrowType: msg.arrow,
+                        order: index,
+                        sourceParticipant: msg.source,
+                        targetParticipant: msg.target
+                    },
+                    markerEnd: { type: MarkerType.ArrowClosed, color: savedEdge?.style?.stroke || '#3b82f6' }
+                });
+
+                // Vertical Lifeline Edges (From previous point to current)
+                const prevSrc = previousPoint.get(msg.source)!;
+                layoutEdges.push({
+                    id: `life_${index}_src_${msg.source}`, // unique ID
+                    source: prevSrc,
+                    target: srcNodeId,
                     sourceHandle: 'bottom-source',
                     targetHandle: 'top-target',
                     type: 'straight',
@@ -1258,15 +1238,101 @@ export class MermaidConverter {
                     animated: false,
                     data: { isLifeline: true }
                 });
-            } else {
-                // Self loop handling (target node shifted down is typically handled by layout logic)
-                // For now, ensuring handles is enough for connection
+
+                const prevTgt = previousPoint.get(msg.target)!;
+                if (msg.source !== msg.target) {
+                    layoutEdges.push({
+                        id: `life_${index}_tgt_${msg.target}`,
+                        source: prevTgt,
+                        target: tgtNodeId,
+                        sourceHandle: 'bottom-source',
+                        targetHandle: 'top-target',
+                        type: 'straight',
+                        style: { stroke: '#4b5563', strokeWidth: 2, strokeDasharray: '5 5' },
+                        animated: false,
+                        data: { isLifeline: true }
+                    });
+                } else {
+                    // Self loop handling (target node shifted down is typically handled by layout logic)
+                    // For now, ensuring handles is enough for connection
+                }
+
+                previousPoint.set(msg.source, srcNodeId);
+                previousPoint.set(msg.target, tgtNodeId);
+
+                currentY += STEP_Y;
+            } else if (item.type === 'note') {
+                const note = item;
+                // Calculate note position
+                let x = 0;
+                let width = 150;
+
+                if (note.position === 'over') {
+                    if (note.participants.length > 1) {
+                        // Span multiple
+                        const minIndex = Math.min(...note.participants.map((p: string) => participants.get(p)?.index || 0));
+                        const maxIndex = Math.max(...note.participants.map((p: string) => participants.get(p)?.index || 0));
+                        const minX = minIndex * SPACING_X;
+                        const maxX = maxIndex * SPACING_X;
+                        // Span from left edge of first to right edge of last
+                        // Tighter fit: Center relative to lifelines
+                        x = minX + 45;
+                        width = (maxX - minX) + 90; // Covers from min+45 to max+135 (Lifelines are at +90)
+                    } else {
+                        // Over single - Center on participant
+                        const pId = note.participants[0];
+                        const pX = participantX.get(pId) || 0;
+                        x = pX + 25; // Centered narrower
+                        width = 130;
+                    }
+                } else if (note.position === 'left of') {
+                    const pId = note.participants[0];
+                    const pX = participantX.get(pId) || 0;
+                    x = pX - 160; // Place directly to the left of the participant box
+                } else if (note.position === 'right of') {
+                    const pId = note.participants[0];
+                    const pX = participantX.get(pId) || 0;
+                    x = pX + 190; // Place directly to the right
+                }
+
+                const savedDim = savedLayout[`note_${index}`];
+                if (savedDim && savedDim.w) width = savedDim.w;
+
+                layoutNodes.push({
+                    id: `note_${index}`,
+                    type: 'rectangle', // Use rectangle but styled as note
+                    position: { x, y: currentY },
+                    data: {
+                        label: note.label,
+                        isSequenceNote: true,
+                        notePosition: note.position,
+                        noteParticipants: note.participants,
+                        order: index,
+                        color: savedStyles[`note_${index}`]?.color || '#fef3c7',
+                        textColor: savedStyles[`note_${index}`]?.textColor || '#000000',
+                        strokeColor: savedStyles[`note_${index}`]?.strokeColor || '#d97706',
+                        strokeStyle: savedStyles[`note_${index}`]?.strokeStyle || 'solid'
+                    },
+                    style: {
+                        width,
+                        minHeight: (savedDim && savedDim.h) ? savedDim.h : 40,
+                        height: (savedDim && savedDim.h) ? savedDim.h : undefined,
+                        background: savedStyles[`note_${index}`]?.color || '#fef3c7',
+                        color: savedStyles[`note_${index}`]?.textColor || '#000',
+                        border: `1px ${savedStyles[`note_${index}`]?.strokeStyle === 'dashed' ? 'dashed' : 'solid'} ${savedStyles[`note_${index}`]?.strokeColor || '#d97706'}`,
+                        borderRadius: '0px', // Notes usually rectangular/folded
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        whiteSpace: 'pre-wrap',
+                        padding: '4px',
+                        zIndex: 20
+                    }
+                });
+                currentY += STEP_Y;
             }
-
-            previousPoint.set(msg.source, srcNodeId);
-            previousPoint.set(msg.target, tgtNodeId);
-
-            currentY += STEP_Y;
         });
 
         // 3. Extend Lifelines to bottom

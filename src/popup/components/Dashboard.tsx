@@ -104,6 +104,11 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
             return;
         }
 
+        // IMPROVEMENT: Show loading immediately to prevent UI freeze
+        setShowAnalysisMenu(false);
+        setAiProcessing(true);
+        setAiMessage('Analyzing repository...');
+
         try {
             if (type === 'flowchart' || type === 'health') {
                 // Use ANALYZE_REPO to get structure, then AI to generate
@@ -112,8 +117,16 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     type: MessageType.ANALYZE_REPO,
                 });
 
+                if (response.error === 'RATE_LIMIT') {
+                    const token = prompt('GitHub API Rate Limit Exceeded (60 req/hr).\n\nTo continue, please enter a GitHub Personal Access Token (classic):\n(Settings -> Developer settings -> Personal access tokens -> Generate new token)');
+                    if (token) {
+                        await storage.updateSettings({ githubToken: token });
+                        return handleAnalysisTypeSelect(type);
+                    }
+                }
+
                 if (response.success && response.data) {
-                    setShowAnalysisMenu(false);
+                    // setShowAnalysisMenu(false); // Already closed
                     // If we have AI prompt, use AI service
                     // Handle legacy string return (old content script) vs new object return
                     let content = typeof response.data === 'string' ? response.data : response.data.diagram;
@@ -126,7 +139,9 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
 
                             // Show premium loading state
                             setAiMessage(type === 'health' ? 'Generating Health Heatmap...' : 'Architecting Repository Map...');
-                            setAiProcessing(true);
+                            // Show premium loading state
+                            setAiMessage(type === 'health' ? 'Generating Health Heatmap...' : 'Architecting Repository Map...');
+                            // setAiProcessing(true); // Already true
 
                             const aiContent = await aiService.visualizeRepository(
                                 structureStr,
@@ -179,20 +194,29 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     } else {
                         alert('No diagram structure found. Make sure you are viewing a file list.');
                     }
+                    setAiProcessing(false); // Ensure loader stops on error
                 }
             } else if (type === 'issues') {
                 const response: ContentScriptResponse = await sendMessageToTab(tab.id, {
                     type: MessageType.ANALYZE_REPO,
                 });
 
+                if (response.error === 'RATE_LIMIT') {
+                    const token = prompt('GitHub API Rate Limit Exceeded.\n\nPlease enter a GitHub Personal Access Token to continue:');
+                    if (token) {
+                        await storage.updateSettings({ githubToken: token });
+                        return handleAnalysisTypeSelect(type);
+                    }
+                }
+
                 if (response.success && typeof response.data !== 'string' && response.data?.structure) {
-                    setShowAnalysisMenu(false);
+                    // setShowAnalysisMenu(false); // Already closed
                     try {
                         const aiService = await import('../../utils/aiService');
                         const structureStr = response.data.structure.map((s: RepoStructureItem) => `${s.type === 'dir' ? '/' : ''}${s.name}`).join('\n');
 
                         setAiMessage('Genie is auditing your code...');
-                        setAiProcessing(true);
+                        // setAiProcessing(true); // Already true
 
                         const aiContent = await aiService.analyzeRepoIssues(
                             structureStr,
@@ -221,12 +245,15 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     } catch (aiErr: any) {
                         console.error('Issue analysis failed', aiErr);
                         alert(`Issue Analysis failed: ${aiErr.message || 'Unknown error'}`);
+                    } finally {
+                        setAiProcessing(false);
                     }
                 } else {
                     alert('No repository structure found. Make sure you are viewing a GitHub file list.');
+                    setAiProcessing(false);
                 }
             } else if (type === 'readme') {
-                setShowAnalysisMenu(false);
+                // setShowAnalysisMenu(false);
                 const response = await sendMessageToTab(tab.id, {
                     type: MessageType.ANALYZE_README,
                 });
@@ -240,6 +267,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
 
                     await loadData();
                     onOpenDocument(doc.id);
+                    setAiProcessing(false);
                 } else {
                     // Better error handling with user guidance
                     if (response.error?.includes('Receiving end does not exist')) {
@@ -249,11 +277,13 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     } else {
                         alert(`Failed to fetch README: ${response.error || 'Unknown error'}`);
                     }
+                    setAiProcessing(false);
                 }
             } else if (type === 'review') {
-                setShowAnalysisMenu(false);
+            } else if (type === 'review') {
+                // setShowAnalysisMenu(false);
                 setAiMessage('Genie is reviewing the PR...');
-                setAiProcessing(true);
+                // setAiProcessing(true);
 
                 const response = await sendMessage({
                     type: MessageType.FETCH_PR_DIFF,

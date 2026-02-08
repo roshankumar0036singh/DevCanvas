@@ -1,103 +1,65 @@
-/**
- * GitHub Service - Fetch repository data and READMEs
- */
 
-export interface GitHubRepo {
-    owner: string;
-    repo: string;
-    url: string;
+export class RateLimitError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'RateLimitError';
+    }
 }
 
-/**
- * Parse GitHub URL to extract owner and repo
- */
-export function parseGitHubUrl(url: string): GitHubRepo | null {
-    const patterns = [
-        /github\.com\/([^/]+)\/([^/]+)/,
-        /github\.com\/([^/]+)\/([^/]+)\.git/,
-    ];
+export class GitHubService {
+    private token?: string;
 
-    for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) {
-            return {
-                owner: match[1],
-                repo: match[2].replace('.git', ''),
-                url: `https://github.com/${match[1]}/${match[2].replace('.git', '')}`,
-            };
-        }
+    constructor(token?: string) {
+        this.token = token;
     }
 
-    return null;
-}
+    private getHeaders(): Record<string, string> {
+        const headers: Record<string, string> = {
+            'Accept': 'application/vnd.github.v3+json',
+        };
+        if (this.token) {
+            headers['Authorization'] = `token ${this.token}`;
+        }
+        return headers;
+    }
 
-/**
- * Fetch README content from GitHub repository
- */
-export async function fetchReadme(owner: string, repo: string): Promise<string> {
-    try {
-        // Try README.md first
-        const readmeUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/README.md`;
-        let response = await fetch(readmeUrl);
+    async fetchRepoTree(owner: string, repo: string, branch: string): Promise<any[]> {
+        const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+        const response = await fetch(url, { headers: this.getHeaders() });
 
-        // If main branch doesn't exist, try master
-        if (!response.ok) {
-            const masterUrl = `https://raw.githubusercontent.com/${owner}/${repo}/master/README.md`;
-            response = await fetch(masterUrl);
+        if (response.status === 403 || response.status === 429) {
+            throw new RateLimitError('GitHub API Rate Limit Exceeded');
         }
 
         if (!response.ok) {
-            throw new Error(`README not found (${response.status})`);
+            throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.tree; // Array of { path, mode, type, sha, size, url }
+    }
+
+    async fetchFileContent(owner: string, repo: string, path: string): Promise<string> {
+        // Use raw media type to get content directly
+        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+        const headers = this.getHeaders();
+        // Request raw content
+        headers['Accept'] = 'application/vnd.github.v3.raw';
+
+        const response = await fetch(url, { headers });
+
+        if (response.status === 403 || response.status === 429) {
+            throw new RateLimitError('GitHub API Rate Limit Exceeded');
+        }
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch file: ${path}`);
         }
 
         return await response.text();
-    } catch (error: any) {
-        console.error('Error fetching README:', error);
-        throw new Error(`Failed to fetch README: ${error.message}`);
     }
+
+    // Fallback using raw.githubusercontent.com (for public repos if API fails?) 
+    // Actually API is better for private. But raw domain works for tokens too? 
+    // Stick to API for consistency.
 }
-
-/**
- * Fetch README from current tab's GitHub URL
- */
-export async function fetchReadmeFromCurrentTab(): Promise<{ readme: string; repo: GitHubRepo }> {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab.url) {
-        throw new Error('No active tab URL');
-    }
-
-    const repo = parseGitHubUrl(tab.url);
-    if (!repo) {
-        throw new Error('Not a GitHub repository URL');
-    }
-
-    const readme = await fetchReadme(repo.owner, repo.repo);
-
-    return { readme, repo };
-}
-
-/**
- * Get repository information from GitHub API
- */
-export async function getRepoInfo(owner: string, repo: string): Promise<any> {
-    try {
-        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch repo info (${response.status})`);
-        }
-
-        return await response.json();
-    } catch (error: any) {
-        console.error('Error fetching repo info:', error);
-        throw error;
-    }
-}
-
-export default {
-    parseGitHubUrl,
-    fetchReadme,
-    fetchReadmeFromCurrentTab,
-    getRepoInfo,
-};
