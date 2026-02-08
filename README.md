@@ -40,7 +40,7 @@
 
 1. **Clone the Repo**
    ```bash
-   git clone https://github.com/devcanvas/devcanvas.git
+   git clone https://github.com/roshankumar0036singh/devcanvas.git
    cd devcanvas
    ```
 
