@@ -113,104 +113,134 @@ async function fetchRepoFile(owner: string, repo: string, filename: string): Pro
     return null;
 }
 
+
+import { GitHubService, RateLimitError } from '../utils/githubService';
+import StorageManager from '../utils/storage';
+
+async function getBranch(user: string, repo: string, token?: string): Promise<string> {
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    // URL: /user/repo/tree/branch/... or /user/repo/blob/branch/...
+    if (pathParts.length >= 4 && (pathParts[2] === 'tree' || pathParts[2] === 'blob')) {
+        return pathParts[3];
+    }
+
+    // Default branch from API
+    try {
+        // We need a method to get repo details? Or just guess main/master?
+        // Let's add getRepoDetails to service or fetch manually here for simplicity
+        const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
+        if (token) headers['Authorization'] = `token ${token}`;
+
+        const resp = await fetch(`https://api.github.com/repos/${user}/${repo}`, { headers });
+        if (resp.ok) {
+            const data = await resp.json();
+            return data.default_branch || 'main';
+        }
+    } catch (e) {
+        console.warn('DevCanvas: Failed to fetch default branch', e);
+    }
+    return 'main';
+}
+
 async function analyzeGitHubRepo() {
     console.log('DevCanvas: ===== STARTING ANALYSIS =====');
-    console.log('DevCanvas: URL:', window.location.href);
-
-    const structure: { name: string; type: 'file' | 'dir' }[] = [];
     const pathParts = window.location.pathname.split('/').filter(Boolean);
-
-    console.log('DevCanvas: Path parts:', pathParts);
-
-    if (pathParts.length < 2) {
-        console.log('DevCanvas: ERROR - Not a valid repo URL');
-        return `graph TD\n    error[Invalid repo URL]\n    style error fill:#fee,stroke:#f00`;
-    }
+    if (pathParts.length < 2) return `graph TD\n    error[Invalid repo URL]`;
 
     const user = pathParts[0];
     const repo = pathParts[1];
-    const repoBase = `/${user}/${repo}`;
 
-    console.log('DevCanvas: Repo base:', repoBase);
+    // Check for Token
+    const settings = await StorageManager.getSettings();
+    const token = settings.githubToken;
+    let structure: { name: string; type: 'file' | 'dir' }[] = [];
+    let usedApi = false;
+    let ghService: GitHubService | null = null;
 
-    // Get all links on page
-    const allLinks = document.getElementsByTagName('a');
-    console.log('DevCanvas: Total links on page:', allLinks.length);
+    if (token) {
+        try {
+            console.log('DevCanvas: Using GitHub API with Token');
+            ghService = new GitHubService(token);
+            const branch = await getBranch(user, repo, token);
+            const tree = await ghService.fetchRepoTree(user, repo, branch);
 
-    const processedMap = new Map<string, 'file' | 'dir'>();
-    let blobCount = 0;
-    let treeCount = 0;
-    let matchedCount = 0;
-
-    for (let i = 0; i < allLinks.length; i++) {
-        const link = allLinks[i];
-        const href = link.href;
-        const text = link.textContent?.trim();
-
-        if (!href || !text) continue;
-        if (!href.includes(repoBase)) continue;
-
-        // Determine type based on URL pattern
-        let type: 'file' | 'dir' | null = null;
-        if (href.includes('/blob/')) {
-            type = 'file';
-            blobCount++;
-        } else if (href.includes('/tree/')) {
-            type = 'dir';
-            treeCount++;
+            structure = tree.map((item: any) => ({
+                name: item.path,
+                type: item.type === 'blob' ? 'file' : 'dir'
+            }));
+            usedApi = true;
+            console.log(`DevCanvas: Fetched ${structure.length} items from API`);
+        } catch (e) {
+            console.error('DevCanvas: API Error', e);
+            if (e instanceof RateLimitError) {
+                return { error: 'RATE_LIMIT' };
+            }
+            // Fallback to DOM if API fails (e.g. 404, Network)
+            console.log('DevCanvas: Falling back to DOM Scraping');
         }
+    }
 
-        if (!type) continue;
-        if (text === '..') continue;
+    if (!usedApi) {
+        // --- Original DOM Scraping Logic ---
+        const repoBase = `/${user}/${repo}`;
+        const allLinks = document.getElementsByTagName('a');
+        const processedMap = new Map<string, 'file' | 'dir'>();
 
-        // RELAXED matching - accept any reasonable text
-        if (text.length > 0 && text.length < 100 && !text.includes('\n')) {
-            if (!processedMap.has(text)) {
-                processedMap.set(text, type);
-                matchedCount++;
-                if (matchedCount <= 5) {
-                    console.log(`DevCanvas: Matched "${text}" as ${type}`);
-                }
+        for (let i = 0; i < allLinks.length; i++) {
+            const link = allLinks[i];
+            const href = link.getAttribute('href');
+            const text = link.textContent?.trim(); // Use text content as name? No, use href path relative to repo
+
+            if (!href || !text) continue;
+            // Only capture items that are inside the repo blob/tree
+            if (!href.startsWith(repoBase)) continue;
+
+            // Logic to extract clean path from href
+            // href: /user/repo/blob/main/src/index.ts -> src/index.ts
+            // href: /user/repo/tree/main/src -> src
+
+            let type: 'file' | 'dir' | null = null;
+            if (href.includes('/blob/')) type = 'file';
+            else if (href.includes('/tree/')) type = 'dir';
+
+            if (!type) continue;
+
+            // Extract relative path
+            // parts: ['', user, repo, blob|tree, branch, ...path]
+            const parts = href.split('/').filter(Boolean);
+            if (parts.length < 5) continue; // Must have path after branch
+
+            const relativePath = parts.slice(4).join('/');
+            if (relativePath && !processedMap.has(relativePath)) {
+                processedMap.set(relativePath, type);
             }
         }
+
+        processedMap.forEach((type, name) => structure.push({ name, type }));
     }
-
-    console.log('DevCanvas: Blob links found:', blobCount);
-    console.log('DevCanvas: Tree links found:', treeCount);
-    console.log('DevCanvas: Unique items matched:', processedMap.size);
-
-    processedMap.forEach((type, name) => {
-        structure.push({ name, type });
-    });
-
-    console.log('DevCanvas: Final structure length:', structure.length);
 
     if (structure.length === 0) {
-        console.log('DevCanvas: ERROR - No files detected!');
-        return `graph TD\n    error[No files detected]\n    info[Found ${blobCount} blob + ${treeCount} tree links]\n    hint[Check DevTools Console]\n    style error fill:#fee,stroke:#f00`;
+        return `graph TD\n    error[No files detected]`;
     }
 
-    console.log('DevCanvas: Generating Mermaid diagram...');
     const diagram = generateMermaidTree(structure);
-    console.log('DevCanvas: Diagram generated, length:', diagram.length);
 
-    // Fetch extra context for deeper analysis
+    // Context Fetching (Updated to use API if available)
     let extraContext = '';
-    // Common configuration and entry files to fetch proactively
+
+
     const importantFiles = [
         'README.md', 'package.json', 'requirements.txt', 'go.mod', 'pom.xml', 'build.gradle',
         'index.html', 'manifest.json', 'Dockerfile', 'docker-compose.yml', 'tsconfig.json',
-        // Common Source Entry Points (Probe these even if not visible in root)
         'src/index.css', 'src/styles.css', 'src/global.css', 'src/App.css',
         'src/index.js', 'src/index.ts', 'src/index.tsx', 'src/index.jsx',
         'src/main.js', 'src/main.ts', 'src/main.tsx', 'src/main.go', 'src/main.rs',
         'src/App.js', 'src/App.tsx', 'src/App.vue', 'src/App.jsx'
     ];
 
-    // Identify source files for Deep Analysis
+    // ... (sorting and slicing) ...
     const sourceExtensions = ['.js', '.ts', '.tsx', '.jsx', '.py', '.sh', '.go', '.rb', '.java', '.c', '.cpp', '.h', '.html', '.css', '.json', '.yaml', '.yml', '.sql', '.rs', '.php'];
 
-    // Sort items to prioritize interesting files (e.g. controllers, services, styles)
     const sortedStructure = [...structure].sort((a, b) => {
         const priorityScore = (name: string) => {
             name = name.toLowerCase();
@@ -228,12 +258,10 @@ async function analyzeGitHubRepo() {
     const sourceFiles = sortedStructure.filter(i =>
         i.type === 'file' &&
         sourceExtensions.some(ext => i.name.toLowerCase().endsWith(ext)) &&
-        !importantFiles.includes(i.name) // Avoid duplicates
-    ).slice(0, 12); // Increased from 7 to 12
+        !importantFiles.includes(i.name)
+    ).slice(0, 12);
 
-    // Check for issue templates in the structure
     const templateKeywords = ['issue_template', 'bug_report', 'feature_request', 'template'];
-    // Use original structure for templates as they are usually in root or .github
     const templateFiles = structure.filter(i =>
         i.type === 'file' &&
         templateKeywords.some(kw => i.name.toLowerCase().includes(kw)) &&
@@ -244,15 +272,32 @@ async function analyzeGitHubRepo() {
         ...importantFiles.map(f => ({ name: f, tag: 'FILE' })),
         ...templateFiles.map(f => ({ name: f.name, tag: 'ISSUE_TEMPLATE' })),
         ...sourceFiles.map(f => ({ name: f.name, tag: 'SOURCE_CODE' }))
-    ].filter(f => structure.some(s => s.name === f.name));
+    ].filter(f => structure.some(s => s.name === f.name) || importantFiles.includes(f.name));
+    // ^ Allow importantFiles to be fetched even if not in structure (if using API, structure has ALL files. If scraping, maybe not).
+    // If API used, structure has everything.
+    // If scraping used, structure has only visible. use `fetchRepoFile` for important (proactive).
 
-    console.log(`DevCanvas: Fetching ${filesToFetch.length} files for context in parallel...`);
+    console.log(`DevCanvas: Fetching ${filesToFetch.length} files...`);
 
-    // Fetch in parallel with limit if needed (here we have ~10-15 files max, parallel is fine)
+    // ghService is already initialized if token exists
+
     const fetchPromises = filesToFetch.map(async (file) => {
-        const content = await fetchRepoFile(user, repo, file.name);
-        if (content) {
-            return `\n--- CONTENT OF ${file.tag} (${file.name}) ---\n${content.slice(0, 6000)}\n`;
+        try {
+            let content = '';
+            if (ghService) {
+                try {
+                    content = await ghService.fetchFileContent(user, repo, file.name);
+                } catch (e) {
+                    // Fallback to raw if API fails or 404
+                    content = (await fetchRepoFile(user, repo, file.name)) || '';
+                }
+            } else {
+                content = (await fetchRepoFile(user, repo, file.name)) || '';
+            }
+
+            if (content) return `\n--- CONTENT OF ${file.tag} (${file.name}) ---\n${content.slice(0, 8000)}\n`;
+        } catch (e) {
+            console.warn(`Failed to fetch ${file.name}`, e);
         }
         return '';
     });
@@ -260,14 +305,9 @@ async function analyzeGitHubRepo() {
     const results = await Promise.all(fetchPromises);
     extraContext = results.join('');
 
-    console.log('DevCanvas: Extra context gathered, length:', extraContext.length);
-
-    return {
-        structure,
-        diagram,
-        extraContext
-    };
+    return { structure, diagram, extraContext };
 }
+
 
 function generateMermaidTree(items: { name: string; type: 'file' | 'dir' }[]) {
     if (items.length === 0) return '';
