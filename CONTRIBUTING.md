@@ -6,8 +6,8 @@ Thank you for your interest in contributing! DevCanvas is built with **React**, 
 
 1. **Fork & Clone**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/devcanvas.git
-   cd devcanvas
+   git clone https://github.com/YOUR_USERNAME/DevCanvas.git
+   cd DevCanvas
    ```
 
 2. **Install Dependencies**

@@ -128,7 +128,7 @@ const App: React.FC = () => {
             <footer className="footer-bar">
                 <span className="version">v0.1.0</span>
                 <a
-                    href="https://github.com/devcanvas/devcanvas"
+                    href="https://github.com/roshankumar0036singh/DevCanvas"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="github-link"
