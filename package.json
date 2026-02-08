@@ -21,8 +21,16 @@
         "markdown",
         "github"
     ],
-    "author": "",
+    "author": "DevCanvas Team",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/devcanvas/devcanvas.git"
+    },
+    "bugs": {
+        "url": "https://github.com/devcanvas/devcanvas/issues"
+    },
+    "homepage": "https://github.com/devcanvas/devcanvas#readme",
     "devDependencies": {
         "@babel/core": "^7.23.0",
         "@babel/preset-env": "^7.23.0",
@@ -49,9 +57,17 @@
     },
     "dependencies": {
         "@monaco-editor/react": "^4.6.0",
+        "@types/dagre": "^0.7.53",
+        "@types/marked": "^5.0.2",
+        "dagre": "^0.8.5",
+        "highlight.js": "^11.11.1",
+        "html-to-image": "^1.11.13",
         "lucide-react": "^0.563.0",
-        "mermaid": "^10.6.0",
+        "marked": "^17.0.1",
+        "mermaid": "^10.9.5",
+        "plantuml-encoder": "^1.4.0",
         "react": "^18.2.0",
-        "react-dom": "^18.2.0"
+        "react-dom": "^18.2.0",
+        "reactflow": "^11.11.4"
     }
 }

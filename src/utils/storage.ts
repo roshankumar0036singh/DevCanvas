@@ -3,8 +3,15 @@
 
 export interface Settings {
     theme: 'light' | 'dark';
-    aiProvider: 'openai' | 'anthropic' | 'custom';
-    apiKey?: string;
+    aiProvider: 'openai' | 'anthropic' | 'gemini' | 'groq' | 'mistral';
+    apiKeys: {
+        openai?: string;
+        anthropic?: string;
+        gemini?: string;
+        groq?: string;
+        mistral?: string;
+    };
+    apiKey?: string; // Deprecated
     autoSync: boolean;
     defaultDiagramType: 'mermaid' | 'plantuml';
 }
@@ -17,6 +24,12 @@ export interface Diagram {
     createdAt: number;
     updatedAt: number;
     tags: string[];
+    metadata?: {
+        viewPath?: string;
+        repoStructure?: string;
+        extraContext?: string;
+        [key: string]: any;
+    };
 }
 
 export interface Document {
@@ -50,7 +63,7 @@ class StorageManager {
     // Get all storage data
     async getAll(): Promise<Partial<StorageData>> {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(null, (data) => {
+            chrome.storage.local.get(null, (data) => {
                 resolve(data as Partial<StorageData>);
             });
         });
@@ -61,7 +74,7 @@ class StorageManager {
         keys: K[]
     ): Promise<Pick<StorageData, K>> {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(keys, (data) => {
+            chrome.storage.local.get(keys, (data) => {
                 resolve(data as Pick<StorageData, K>);
             });
         });
@@ -70,7 +83,7 @@ class StorageManager {
     // Set data
     async set(data: Partial<StorageData>): Promise<void> {
         return new Promise((resolve, reject) => {
-            chrome.storage.sync.set(data, () => {
+            chrome.storage.local.set(data, () => {
                 if (chrome.runtime.lastError) {
                     reject(chrome.runtime.lastError);
                 } else {
@@ -83,14 +96,28 @@ class StorageManager {
     // Settings operations
     async getSettings(): Promise<Settings> {
         const data = await this.get(['settings']);
-        return (
-            data.settings || {
-                theme: 'dark',
-                aiProvider: 'openai',
-                autoSync: true,
-                defaultDiagramType: 'mermaid',
-            }
-        );
+        const defaults: Settings = {
+            theme: 'dark',
+            aiProvider: 'openai',
+            apiKeys: {},
+            autoSync: true,
+            defaultDiagramType: 'mermaid',
+        };
+
+        if (!data.settings) return defaults;
+
+        // Migration: ensure apiKeys object exists
+        const settings = { ...defaults, ...data.settings };
+        if (!settings.apiKeys) {
+            settings.apiKeys = {};
+        }
+
+        // Migrate old single key if needed
+        if (settings.apiKey && !settings.apiKeys[settings.aiProvider]) {
+            settings.apiKeys[settings.aiProvider] = settings.apiKey;
+        }
+
+        return settings;
     }
 
     async updateSettings(settings: Partial<Settings>): Promise<void> {
@@ -201,7 +228,7 @@ class StorageManager {
     // Clear all data
     async clear(): Promise<void> {
         return new Promise((resolve) => {
-            chrome.storage.sync.clear(() => {
+            chrome.storage.local.clear(() => {
                 resolve();
             });
         });

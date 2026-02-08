@@ -21,6 +21,8 @@ export enum MessageType {
 
     // GitHub operations
     ANALYZE_REPO = 'ANALYZE_REPO',
+    ANALYZE_README = 'ANALYZE_README',
+    FETCH_PR_DIFF = 'FETCH_PR_DIFF',
 
     // Settings
     UPDATE_SETTINGS = 'UPDATE_SETTINGS',
@@ -29,6 +31,7 @@ export enum MessageType {
 export interface Message<T = any> {
     type: MessageType;
     data?: T;
+    target?: 'content-script' | 'background' | 'popup';
 }
 
 export interface MessageResponse<T = any> {

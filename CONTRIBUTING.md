@@ -1,47 +1,62 @@
 # Contributing to DevCanvas
 
-Thank you for your interest in contributing to DevCanvas!
+Thank you for your interest in contributing! DevCanvas is built with **React**, **TypeScript**, and **Webpack**, focusing on high-end visual documentation tools.
 
 ## Development Setup
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/devcanvas.git`
-3. Install dependencies: `npm install`
-4. Create a branch: `git checkout -b feature/your-feature-name`
-5. Make your changes
-6. Run tests and linting: `npm run lint && npm run type-check`
-7. Commit your changes: `git commit -m "feat: add amazing feature"`
-8. Push to your fork: `git push origin feature/your-feature-name`
-9. Open a Pull Request
+1. **Fork & Clone**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/devcanvas.git
+   cd devcanvas
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Development Build**
+   ```bash
+   # Build once
+   npm run build:dev
+   
+   # Or watch for changes
+   npm run dev
+   ```
+
+4. **Code Quality Checks**
+   ```bash
+   # Run linter
+   npm run lint
+   
+   # Type check
+   npm run type-check
+   ```
+
+## Technical Standards
+
+- **Language**: All new code must be written in **TypeScript**.
+- **Styles**: Use vanilla CSS in `popup.css` or themed component-level CSS.
+- **Icons**: We use **Lucide React**. Maintain the premium "Cyber-Hex" aesthetic for any new UI elements.
+- **Tone**: Keep PR reviews and AI outputs authoritative and professional.
 
 ## Commit Convention
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat:` - New feature
 - `fix:` - Bug fix
-- `docs:` - Documentation changes
-- `style:` - Code style changes (formatting, etc.)
-- `refactor:` - Code refactoring
-- `test:` - Adding or updating tests
-- `chore:` - Maintenance tasks
+- `docs:` - Documentation
+- `refactor:` - Optimization or cleanup
+- `chore:` - Tooling/deps changes
 
-## Code Style
+## Pull Request Process
 
-- Use TypeScript for all new code
-- Follow the existing code style (enforced by ESLint and Prettier)
-- Write meaningful variable and function names
-- Add comments for complex logic
-- Keep functions small and focused
+1. Open an **Issue** first for significant changes.
+2. Ensure `npm run lint` and `npm run type-check` pass.
+3. Update the `walkthrough.md` if your change adds new functionality.
+4. Provide screenshots/recordings for UI changes.
 
-## Pull Request Guidelines
+## License
 
-- Keep PRs focused on a single feature or fix
-- Update documentation if needed
-- Add tests for new features
-- Ensure all checks pass
-- Provide a clear description of changes
-
-## Questions?
-
-Feel free to open an issue for any questions or discussions!
+By contributing, you agree that your contributions will be licensed under the **MIT License**.

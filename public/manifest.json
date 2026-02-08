@@ -28,7 +28,8 @@
         "activeTab",
         "scripting",
         "tabs",
-        "sidePanel"
+        "sidePanel",
+        "contextMenus"
     ],
     "host_permissions": [
         "https://api.github.com/*",

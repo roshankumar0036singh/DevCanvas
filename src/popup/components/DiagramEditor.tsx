@@ -1,0 +1,1273 @@
+
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, Save, Sparkles, Download, Code2, Eye, Layers, LayoutTemplate, Copy, Group } from 'lucide-react';
+import AIProcessingOverlay from './AIProcessingOverlay';
+import DiagramRenderer from './DiagramRenderer';
+import DiagramStylePanel from './DiagramStylePanel';
+import ReactFlowEditor from './ReactFlowEditor';
+import { MermaidConverter } from './MermaidConverter';
+import { Node, Edge, MarkerType, getRectOfNodes } from 'reactflow';
+import storage from '../../utils/storage';
+import { toPng } from 'html-to-image';
+import { DIAGRAM_TEMPLATES } from '../../utils/templates';
+
+interface DiagramEditorProps {
+    diagramId: string | null;
+    onBack: () => void;
+    onOpenDocument: (id: string) => void;
+}
+
+const DEFAULT_CODE = `graph TD
+    A[Start] --> B{Is it working?}
+    B -- Yes --> C[Great!]
+    B -- No --> D[Debug]
+    D --> B`;
+
+const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpenDocument }) => {
+    const [code, setCode] = useState(DEFAULT_CODE);
+    const [title, setTitle] = useState('Untitled Diagram');
+    const [error, setError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [showCode, setShowCode] = useState(true);
+    const [diagramLanguage, setDiagramLanguage] = useState<'mermaid' | 'plantuml'>('mermaid');
+    const [selectedNode, setSelectedNode] = useState<{ id: string; text: string; position: { x: number, y: number } } | null>(null);
+    const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+    const [showStylePanel, setShowStylePanel] = useState(false);
+
+    // React Flow state
+    const [editorMode, setEditorMode] = useState<'code' | 'visual'>('code');
+    const [flowNodes, setFlowNodes] = useState<Node[]>([]);
+    const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
+
+    // Visual Editor Styles
+    const [bgColor, setBgColor] = useState('#0d1117');
+    const [bgPattern, setBgPattern] = useState<'dots' | 'lines' | 'cross' | 'none'>('dots');
+
+    // AI Modal State
+    const [showAIModal, setShowAIModal] = useState(false);
+    const [aiMode, setAiMode] = useState<'instruction' | 'code-import' | 'logic-flow'>('instruction');
+    const [aiInstruction, setAiInstruction] = useState('');
+    const [aiProcessing, setAiProcessing] = useState(false);
+    const [aiMessage, setAiMessage] = useState('');
+
+    // Template Modal State
+    const [showTemplateModal, setShowTemplateModal] = useState(false);
+    const [templateCategory, setTemplateCategory] = useState<string>('All');
+    const [diagramMetadata, setDiagramMetadata] = useState<any>(null);
+    const [history, setHistory] = useState<string[]>([]);
+    const [redoStack, setRedoStack] = useState<string[]>([]);
+    const [dragStartCode, setDragStartCode] = useState<string | null>(null);
+
+
+
+
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    // Auto-dismiss notification
+    useEffect(() => {
+        if (!notification) return;
+        const timer = setTimeout(() => setNotification(null), 3000);
+        return () => clearTimeout(timer);
+    }, [notification]);
+
+    const pushToHistory = useCallback((newCode: string) => {
+        // Prevent duplicate history entries
+        setHistory(prev => {
+            if (prev.length > 0 && prev[prev.length - 1] === newCode) return prev;
+            return [...prev, newCode];
+        });
+        setRedoStack([]); // Clear redo stack on new action
+    }, []);
+
+    const handleNodeDragStart = useCallback(() => {
+        setDragStartCode(code);
+    }, [code]);
+
+    const handleNodeDragStop = useCallback(() => {
+        if (dragStartCode && dragStartCode !== code) {
+            setHistory(prev => {
+                if (prev.length > 0 && prev[prev.length - 1] === dragStartCode) return prev;
+                return [...prev, dragStartCode];
+            });
+            setRedoStack([]);
+        }
+        setDragStartCode(null);
+    }, [dragStartCode, code]);
+
+    const handleUndo = useCallback(() => {
+        if (history.length === 0) return;
+        const previous = history[history.length - 1];
+        setRedoStack(prev => [...prev, code]);
+        setHistory(prev => prev.slice(0, -1));
+        setCode(previous);
+        setNotification({ message: 'Undo', type: 'success' });
+    }, [history, code]);
+
+    const handleRedo = useCallback(() => {
+        if (redoStack.length === 0) return;
+        const next = redoStack[redoStack.length - 1];
+        setHistory(prev => [...prev, code]);
+        setRedoStack(prev => prev.slice(0, -1));
+        setCode(next);
+        setNotification({ message: 'Redo', type: 'success' });
+    }, [redoStack, code]);
+
+    const handleSave = useCallback(async () => {
+        if (!diagramId) return;
+
+        setSaving(true);
+        await storage.updateDiagram(diagramId, {
+            content: code,
+            title,
+            type: diagramLanguage,
+            updatedAt: Date.now(),
+        });
+        setSaving(false);
+    }, [diagramId, code, title, diagramLanguage]);
+
+    const loadDiagram = useCallback(async () => {
+        setLoading(true);
+        if (diagramId) {
+            const diagrams = await storage.getDiagrams();
+            const diagram = diagrams.find(d => d.id === diagramId);
+            if (diagram) {
+                setCode(diagram.content);
+                setTitle(diagram.title);
+                setDiagramLanguage(diagram.type === 'plantuml' ? 'plantuml' : 'mermaid');
+                setDiagramMetadata(diagram.metadata);
+            }
+        } else {
+            // New diagram
+            const newDiagram = await storage.addDiagram({
+                title: 'Untitled Diagram',
+                content: DEFAULT_CODE,
+                type: 'mermaid',
+                tags: [],
+            });
+            setCode(newDiagram.content);
+            setTitle(newDiagram.title);
+        }
+        setLoading(false);
+    }, [diagramId]);
+
+    const syncVisualToCode = useCallback(
+        (nodes: Node[], edges: Edge[]) => {
+            const newCode = MermaidConverter.toMermaid(nodes as any, edges as any);
+            if (newCode !== code) {
+                setCode(newCode);
+                // Don't auto-save immediately on drag to avoid spam, let the auto-save effect handle it
+            }
+        },
+        [code] // Depend on code to avoid loops? No, if we generate new code, we set it.
+    );
+
+    const handleDelete = useCallback(() => {
+        pushToHistory(code);
+        if (selectedNode) {
+            const newNodes = flowNodes.filter(n => n.id !== selectedNode.id);
+            setFlowNodes(newNodes);
+            syncVisualToCode(newNodes, flowEdges);
+            setSelectedNode(null);
+            setShowStylePanel(false);
+        } else if (selectedEdge) {
+            const newEdges = flowEdges.filter(e => e.id !== selectedEdge.id);
+            setFlowEdges(newEdges);
+            syncVisualToCode(flowNodes, newEdges);
+            setSelectedEdge(null);
+            setShowStylePanel(false);
+        }
+    }, [code, flowNodes, flowEdges, selectedNode, selectedEdge, syncVisualToCode, pushToHistory]);
+
+    // Keyboard Shortcuts for Undo/Redo
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    handleRedo();
+                } else {
+                    handleUndo();
+                }
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [history, redoStack, code, handleUndo, handleRedo]);
+
+    // Delete shortcut
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (editorMode === 'visual' && (e.key === 'Delete' || e.key === 'Backspace')) {
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+                handleDelete();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [editorMode, flowNodes, flowEdges, selectedNode, selectedEdge, handleDelete]);
+
+    useEffect(() => {
+        loadDiagram();
+    }, [diagramId, loadDiagram]);
+
+    // Auto-save every 2 seconds
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (diagramId && code) {
+                handleSave();
+            }
+        }, 2000);
+
+        return () => clearTimeout(timer);
+    }, [code, title, diagramId, handleSave]);
+
+    const handleFolderAudit = async (folderName: string) => {
+        if (!diagramMetadata?.repoStructure) {
+            alert('This diagram does not have repository context. Interactive audits are only available for repository maps.');
+            return;
+        }
+
+        try {
+            const aiService = await import('../../utils/aiService');
+            setAiMessage(`Genie is auditing folder: ${folderName}...`);
+            setAiProcessing(true);
+
+            const aiContent = await aiService.analyzeFolderIssues(
+                folderName,
+                diagramMetadata.repoStructure,
+                await storage.getSettings(),
+                diagramMetadata.extraContext
+            );
+
+            setAiProcessing(false);
+
+            if (aiContent) {
+                const doc = await storage.addDocument({
+                    title: `Audit: ${folderName}`,
+                    content: aiContent,
+                    tags: ['github', 'audit', 'folder']
+                });
+
+                onOpenDocument(doc.id);
+            }
+        } catch (err: any) {
+            setAiProcessing(false);
+            alert(`Folder audit failed: ${err.message}`);
+        }
+    };
+
+
+    const handleEnhanceWithAI = () => {
+        setAiInstruction('');
+        setShowAIModal(true);
+    };
+
+    const executeEnhancement = async () => {
+        try {
+            setSaving(true); // Show loading state on button
+            setAiMessage(aiMode === 'logic-flow' ? 'Genie is mapping logic paths...' : aiMode === 'code-import' ? 'Analyzing structure...' : 'Polishing diagram...');
+            setAiProcessing(true);
+
+            const settings = await storage.getSettings();
+
+            if (!settings.apiKeys?.[settings.aiProvider || 'openai'] && !settings.apiKey) {
+                alert('Please configure an API Key in Settings first.');
+                setSaving(false);
+                return;
+            }
+
+            const originalCode = aiMode === 'code-import' || aiMode === 'logic-flow' ? '' : code;
+
+            let instruction = aiInstruction;
+            let enhancedCode = '';
+
+            const aiService = await import('../../utils/aiService');
+
+            if (aiMode === 'logic-flow') {
+                enhancedCode = await aiService.visualizeLogicFlow(aiInstruction, settings);
+            } else {
+                if (aiMode === 'code-import') {
+                    instruction = `Analyze the following code snippet and generate a comprehensive Mermaid diagram (e.g. Class Diagram for JSON/Classes, ERD for SQL) that represents the relationships and structure. \n\nIMPORTANT: Return ONLY the Mermaid code. \n\nCode Snippet:\n${aiInstruction}`;
+                }
+                enhancedCode = await aiService.enhanceDiagram(originalCode, diagramLanguage, settings, instruction);
+            }
+
+            if (enhancedCode) {
+                pushToHistory(code);
+                setCode(enhancedCode);
+                if (aiMode === 'logic-flow') {
+                    setDiagramLanguage('mermaid');
+                }
+                handleSave();
+                setShowAIModal(false);
+            }
+            setAiProcessing(false);
+        } catch (err: any) {
+            console.error('AI Enhancement Callback Error:', err);
+            setAiProcessing(false);
+            setError(err.message || 'Failed to enhance diagram');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+
+    const handleExport = async (format: 'png' | 'svg', transparent: boolean = false) => {
+        setNotification({ message: 'Preparing download...', type: 'success' });
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        let container: HTMLElement | null = null;
+        const filename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'diagram';
+
+        if (editorMode === 'visual') {
+            container = window.document.querySelector('.react-flow__viewport') as HTMLElement;
+        } else {
+            container = window.document.querySelector('.mermaid-container') as HTMLElement;
+        }
+
+        if (!container) {
+            setNotification({ message: 'Could find diagram to export.', type: 'error' });
+            return;
+        }
+
+        try {
+            const filterNode = (node: HTMLElement) => {
+                const cls = node.classList;
+                if (cls?.contains('react-flow__controls')) return false;
+                if (cls?.contains('react-flow__handle')) return false;
+                if (cls?.contains('react-flow__attribution')) return false;
+                if (cls?.contains('edge-placeholder')) return false;
+                return true;
+            };
+
+            const bgColorToUse = transparent ? 'transparent' : (editorMode === 'visual' ? bgColor : '#0d1117');
+
+            if (editorMode === 'visual') {
+                // Get full bounds of all nodes
+                const nodesBounds = getRectOfNodes(flowNodes);
+
+                const exportOptions = {
+                    backgroundColor: bgColorToUse,
+                    filter: filterNode as any,
+                    width: nodesBounds.width + 100,
+                    height: nodesBounds.height + 100,
+                    style: {
+                        width: `${nodesBounds.width + 100}px`,
+                        height: `${nodesBounds.height + 100}px`,
+                        transform: `translate(${-nodesBounds.x + 50}px, ${-nodesBounds.y + 50}px)`,
+                    },
+                };
+
+                if (format === 'png') {
+                    const dataUrl = await toPng(container, { ...exportOptions, pixelRatio: 2 });
+                    const link = window.document.createElement('a');
+                    link.download = `${filename}${transparent ? '_transparent' : ''}.png`;
+                    link.href = dataUrl;
+                    link.click();
+                } else {
+                    const { toSvg } = await import('html-to-image');
+                    const dataUrl = await toSvg(container, exportOptions);
+                    const link = window.document.createElement('a');
+                    link.download = `${filename}${transparent ? '_transparent' : ''}.svg`;
+                    link.href = dataUrl;
+                    link.click();
+                }
+            } else {
+                // Mermaid Export (Simplified)
+                if (format === 'png') {
+                    const dataUrl = await toPng(container, {
+                        backgroundColor: bgColorToUse,
+                        filter: filterNode as any,
+                        pixelRatio: 2
+                    });
+                    const link = window.document.createElement('a');
+                    link.download = `${filename}.png`;
+                    link.href = dataUrl;
+                    link.click();
+                } else {
+                    const svgElement = container.querySelector('svg');
+                    if (svgElement) {
+                        const svgData = new XMLSerializer().serializeToString(svgElement);
+                        const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const link = window.document.createElement('a');
+                        link.download = `${filename}.svg`;
+                        link.href = url;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                    }
+                }
+            }
+            setNotification({ message: 'Export complete!', type: 'success' });
+        } catch (err) {
+            console.error('Export failed:', err);
+            setNotification({ message: 'Export failed.', type: 'error' });
+        }
+    };
+
+    const handleCopyToClipboard = async () => {
+        let container: HTMLElement | null = null;
+        if (editorMode === 'visual') {
+            container = window.document.querySelector('.react-flow') as HTMLElement;
+        } else {
+            container = window.document.querySelector('.mermaid-container') as HTMLElement;
+        }
+
+        if (!container) return;
+
+        try {
+            const filterNode = (node: HTMLElement) => {
+                if (node.classList?.contains('react-flow__controls')) return false;
+                if (node.classList?.contains('react-flow__handle')) return false;
+                if (node.classList?.contains('react-flow__attribution')) return false;
+                return true;
+            };
+
+            // Generate transparent PNG for clipboard
+            const dataUrl = await toPng(container, {
+                backgroundColor: 'transparent',
+                filter: filterNode,
+                pixelRatio: 2
+            });
+
+            // Convert dataUrl to blob
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+
+            // Copy to clipboard
+            const item = new ClipboardItem({ [blob.type]: blob });
+            await navigator.clipboard.write([item]);
+
+            setNotification({ message: 'Transparent PNG copied to clipboard!', type: 'success' });
+        } catch (err) {
+            console.error('Copy failed:', err);
+            setNotification({ message: 'Copy failed. Browser may not support image direct copy.', type: 'error' });
+        }
+    };
+
+    const handleCopyJson = () => {
+        try {
+            const diagramData = {
+                title,
+                language: diagramLanguage,
+                code,
+                visual: editorMode === 'visual' ? {
+                    nodes: flowNodes,
+                    edges: flowEdges,
+                    background: { color: bgColor, pattern: bgPattern }
+                } : null
+            };
+
+            navigator.clipboard.writeText(JSON.stringify(diagramData, null, 2));
+            setNotification({ message: 'Diagram data (JSON) copied!', type: 'success' });
+        } catch (err) {
+            console.error('JSON Copy failed:', err);
+            setNotification({ message: 'JSON Copy failed.', type: 'error' });
+        }
+    };
+
+    const handleLanguageChange = (lang: 'mermaid' | 'plantuml') => {
+        setDiagramLanguage(lang);
+        if (code === DEFAULT_CODE || code.includes('@startuml')) {
+            if (lang === 'plantuml') {
+                setCode(`@startuml\nAlice -> Bob: Hello\nBob --> Alice: Hi!\n@enduml`);
+                setEditorMode('code'); // PlantUML only supports code mode
+            } else {
+                setCode(DEFAULT_CODE);
+            }
+        }
+        pushToHistory(code);
+    };
+
+    const handleNodeSelect = (nodeId: string, position: { x: number; y: number }) => {
+        let cleanId = nodeId;
+        const parts = nodeId.split('-');
+        if (parts.length > 1) {
+            cleanId = parts.find(p => code.includes(`${p}[`) || code.includes(`${p}(`) || code.includes(`${p}{`)) || nodeId;
+        }
+
+        const nodeRegex = new RegExp(`(${cleanId})\\s*(\\[|\\(|\\{\\{|\\{)([^\\]\\)\\}]+)`);
+        const match = code.match(nodeRegex);
+        const currentText = match && match[3] ? match[3] : '';
+
+        setSelectedNode({
+            id: cleanId,
+            text: currentText,
+            position
+        });
+    };
+
+    const getAvailableNodes = (): string[] => {
+        if (editorMode === 'visual') {
+            return flowNodes.map(n => n.id).sort();
+        }
+        const nodeRegex = /([A-Za-z0-9_.-]+)\s*[( [{]/g;
+        const matches = code.matchAll(nodeRegex);
+        const nodes = new Set<string>();
+        for (const match of matches) {
+            nodes.add(match[1]);
+        }
+        return Array.from(nodes).sort();
+    };
+
+    const handleArrowCreate = (from: string, to: string, label: string, style: string, color?: string) => {
+        if (editorMode === 'visual') {
+            // We update flowEdges
+            const edgeColor = color || '#0ea5e9';
+            const newEdge: Edge = {
+                id: `${from}-${to}-${Date.now()}`,
+                source: from,
+                target: to,
+                label: label,
+                type: 'editable',
+                style: { stroke: edgeColor, strokeWidth: 2 },
+                markerEnd: {
+                    type: MarkerType.ArrowClosed,
+                    color: edgeColor,
+                },
+                data: { originalArrow: style === 'solid' ? '-->' : style === 'dotted' ? '-.->' : '==>' }
+            };
+            const newEdges = [...flowEdges, newEdge];
+            setFlowEdges(newEdges);
+            syncVisualToCode(flowNodes, newEdges);
+        } else {
+            const arrowMap: Record<string, string> = {
+                'solid': '-->',
+                'dotted': '-.->',
+                'thick': '==>',
+                'open': '---'
+            };
+            const arrowSymbol = arrowMap[style] || '-->';
+            const labelPart = label ? `|${label}|` : '';
+            const newArrow = `    ${from} ${arrowSymbol}${labelPart} ${to}`;
+
+            const lines = code.split('\n');
+            let insertIndex = lines.length;
+            for (let i = lines.length - 1; i >= 0; i--) {
+                if (lines[i].trim() && !lines[i].includes('@enduml')) {
+                    insertIndex = i + 1;
+                    break;
+                }
+            }
+            lines.splice(insertIndex, 0, newArrow);
+            setCode(lines.join('\n'));
+        }
+    };
+
+    const handleNodeUpdate = (nodeId: string, updates: { text?: string; shape?: string; color?: string; strokeStyle?: string; strokeColor?: string; handleColor?: string; textColor?: string; imageUrl?: string; strokeWidth?: number; groupShape?: string; labelBgColor?: string }) => {
+        pushToHistory(code);
+        if (editorMode === 'visual') {
+            // Visual Mode Update
+            const newNodes = flowNodes.map(node => {
+                if (node.id === nodeId) {
+                    return {
+                        ...node,
+                        type: updates.shape || node.type,
+                        zIndex: node.zIndex, // Preserve z-index
+                        style: node.style, // Preserve style (including z-index in style)
+                        data: {
+                            ...node.data,
+                            label: updates.text === undefined ? node.data.label : updates.text,
+                            color: updates.color || node.data.color,
+                            strokeColor: updates.strokeColor || node.data.strokeColor,
+                            strokeStyle: updates.strokeStyle || node.data.strokeStyle,
+                            handleColor: updates.handleColor || node.data.handleColor,
+                            textColor: updates.textColor || node.data.textColor,
+                            imageUrl: updates.imageUrl === undefined ? node.data.imageUrl : updates.imageUrl,
+                            strokeWidth: updates.strokeWidth || node.data.strokeWidth,
+                            groupShape: updates.groupShape || node.data.groupShape,
+                            labelBgColor: updates.labelBgColor || node.data.labelBgColor
+                        }
+                    };
+                }
+                return node;
+            });
+            setFlowNodes(newNodes);
+            syncVisualToCode(newNodes, flowEdges);
+
+            // Update selected node state to reflect changes immediately in the panel
+            const updatedNode = newNodes.find(n => n.id === nodeId);
+            if (updatedNode) {
+                setSelectedNode({
+                    id: updatedNode.id,
+                    text: updatedNode.data.label,
+                    position: updatedNode.position,
+                    color: updatedNode.data.color,
+                    shape: updatedNode.type,
+                    strokeColor: updatedNode.data.strokeColor,
+                    strokeStyle: updatedNode.data.strokeStyle,
+                    handleColor: updatedNode.data.handleColor,
+                    textColor: updatedNode.data.textColor,
+                    imageUrl: updatedNode.data.imageUrl,
+                    strokeWidth: updatedNode.data.strokeWidth,
+                    groupShape: updatedNode.data.groupShape,
+                    labelBgColor: updatedNode.data.labelBgColor,
+                    parentNode: updatedNode.parentNode
+                } as any);
+            }
+        } else {
+            // Code Mode Update (Regex)
+            let newCode = code;
+
+            if (updates.text) {
+                const defRegex = new RegExp(`(${nodeId}\\s*)(\\[|\\(\\(|\\(|\\{\\{|\\{>|\\{)(.*?)(\\]|\\)\\)|\\)|\\}\\}|\\}|\\>)`);
+                newCode = newCode.replace(defRegex, (_match, prefix, open, _content, close) => {
+                    return `${prefix}${open}${updates.text}${close}`;
+                });
+            }
+
+            if (updates.shape) {
+                let open = '[', close = ']';
+                switch (updates.shape) {
+                    case 'rounded': open = '('; close = ')'; break;
+                    case 'circle': open = '(('; close = '))'; break;
+                    case 'diamond': open = '{'; close = '}'; break;
+                    default: open = '['; close = ']'; break;
+                }
+                const shapeRegex = new RegExp(`(${nodeId}\\s*)(\\[|\\(\\(|\\(|\\{\\{|\\{>|\\{)(.*?)(\\]|\\)\\)|\\)|\\}\\}|\\}|\\>)`);
+                newCode = newCode.replace(shapeRegex, (_match, prefix, _oldOpen, content, _oldClose) => {
+                    return `${prefix}${open}${content}${close}`;
+                });
+            }
+
+            if (updates.color || updates.strokeStyle || updates.strokeColor) {
+                const styleRegex = new RegExp(`style\\s+${nodeId}\\s+.*`);
+                const stroke = updates.strokeColor || '#333';
+                let styleDef = `fill:${updates.color || '#333'},stroke:${stroke},stroke-width:2px,color:#fff`;
+
+                if (updates.strokeStyle === 'dashed') styleDef += ',stroke-dasharray: 5 5';
+                else if (updates.strokeStyle === 'dotted') styleDef += ',stroke-dasharray: 1 2';
+                else styleDef += ',stroke-dasharray: 0';
+
+                const styleString = `style ${nodeId} ${styleDef}`;
+                if (styleRegex.test(newCode)) {
+                    newCode = newCode.replace(styleRegex, styleString);
+                } else {
+                    newCode += `\n${styleString}`;
+                }
+            }
+            setCode(newCode);
+            handleSave();
+        }
+    };
+
+    const handleEdgeUpdate = (edgeId: string, updates: { label?: string; color?: string; style?: string; labelColor?: string; labelBg?: string }) => {
+        pushToHistory(code);
+        if (editorMode === 'visual') {
+            // Visual Mode Update
+            const newEdges = flowEdges.map(edge => {
+                if (edge.id === edgeId) {
+                    const updatedEdge: Edge = {
+                        ...edge,
+                        label: updates.label !== undefined ? updates.label : edge.label,
+                        style: {
+                            ...edge.style,
+                            stroke: updates.color || edge.style?.stroke || '#0ea5e9',
+                            strokeWidth: edge.style?.strokeWidth || 2
+                        },
+                        markerEnd: {
+                            type: MarkerType.ArrowClosed,
+                            color: updates.color || (edge.markerEnd as any)?.color || '#0ea5e9',
+                        },
+                        labelStyle: {
+                            fill: updates.labelColor || (edge as any).labelStyle?.fill || '#ffffff',
+                            fontWeight: 600,
+                            fontSize: 14,
+                        },
+                        labelBgStyle: {
+                            fill: updates.labelBg || (edge as any).labelBgStyle?.fill || 'transparent',
+                        },
+                        labelBgPadding: [8, 4],
+                        labelBgBorderRadius: 4,
+                    };
+                    return updatedEdge;
+                }
+                return edge;
+            });
+            setFlowEdges(newEdges);
+            syncVisualToCode(flowNodes, newEdges);
+
+            // Update selected edge state
+            const updatedEdge = newEdges.find(e => e.id === edgeId);
+            if (updatedEdge) {
+                setSelectedEdge(updatedEdge);
+            }
+        }
+    };
+
+    // React Flow conversion - from Code to Visual
+    useEffect(() => {
+        if (editorMode === 'visual' && diagramLanguage === 'mermaid') {
+            try {
+                const { nodes, edges } = MermaidConverter.toReactFlow(code);
+                // JSON stringify to compare deeply? Or just set it. 
+                // Setting it triggers handleFlowNodesChange which triggers syncVisualToCode which checks for diff.
+                // To avoid loop, syncVisualToCode must be robust.
+                setFlowNodes(nodes);
+                setFlowEdges(edges);
+            } catch (error) {
+                console.error('Failed to convert Mermaid to React Flow:', error);
+            }
+        }
+    }, [editorMode, diagramLanguage, code]);
+
+    // Sync visual changes to code
+    const handleFlowNodesChange = useCallback((nodes: Node[]) => {
+        setFlowNodes(nodes);
+
+    }, []);
+
+    // Effect to debounce sync
+    useEffect(() => {
+        if (editorMode === 'visual') {
+            const timer = setTimeout(() => {
+                const newCode = MermaidConverter.toMermaid(flowNodes as any, flowEdges as any);
+                if (newCode !== code) {
+                    setCode(newCode); // Update code state
+                }
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+        return undefined;
+    }, [flowNodes, flowEdges, editorMode]);
+
+    const handleFlowEdgesChange = (edges: Edge[]) => {
+        setFlowEdges(edges);
+    };
+
+    const handleFlowNodeClick = (node: Node) => {
+        setSelectedNode({
+            id: node.id,
+            text: node.data.label,
+            position: node.position,
+            color: node.data.color,
+            shape: node.type,
+            strokeColor: node.data.strokeColor,
+            strokeStyle: node.data.strokeStyle,
+            handleColor: node.data.handleColor,
+            textColor: node.data.textColor,
+            imageUrl: node.data.imageUrl,
+            parentNode: node.parentNode
+        } as any);
+        setSelectedEdge(null); // Clear edge selection
+        setShowStylePanel(true);
+    };
+
+    const handleFlowEdgeClick = (edge: Edge) => {
+        setSelectedEdge(edge);
+        setSelectedNode(null); // Clear node selection
+        setShowStylePanel(true);
+    };
+
+
+    const handleCreateGroup = () => {
+        pushToHistory(code);
+        if (editorMode === 'visual') {
+            const newId = `group_${Date.now()}`;
+            const newGroup: any = {
+                id: newId,
+                type: 'group',
+                position: { x: 100, y: 100 },
+                style: { width: 400, height: 300 },
+                data: { label: 'New Group', strokeStyle: 'dashed' }
+            };
+            // Ensure group is added to the beginning so it renders behind?
+            // Actually React Flow renders in order. Groups should be first (bottom).
+            const newNodes = [newGroup, ...flowNodes];
+            setFlowNodes(newNodes);
+            syncVisualToCode(newNodes, flowEdges);
+        } else {
+            const groupSnippet = `\nsubgraph ${`group_${Date.now()}`} ["New Group"]\n    direction TB\n    \nend\n`;
+            setCode(prev => prev + groupSnippet);
+            handleSave();
+        }
+        setNotification({ message: 'Group Created', type: 'success' });
+    };
+
+    if (loading) {
+        return (
+            <div className="diagram-editor loading">
+                <div className="spinner"></div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="diagram-editor">
+            {aiProcessing && <AIProcessingOverlay message={aiMessage} />}
+            <div className="editor-header">
+                <button className="btn-back" onClick={onBack} style={{ height: '36px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px' }}>
+                    <ArrowLeft size={18} />
+                    <span>Back</span>
+                </button>
+                <input
+                    type="text"
+                    className="doc-title-input"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Diagram Title"
+                    style={{ height: '36px' }}
+                />
+                <div className="editor-actions">
+                    <select
+                        className="language-selector"
+                        value={diagramLanguage}
+                        onChange={(e) => handleLanguageChange(e.target.value as 'mermaid' | 'plantuml')}
+                        title="Diagram Language"
+                        style={{ height: '36px', padding: '0 8px', borderRadius: '6px', border: '1px solid #30363d', background: '#1c2128', color: '#8b949e' }}
+                    >
+                        <option value="mermaid">Mermaid</option>
+                        <option value="plantuml">PlantUML</option>
+                    </select>
+
+                    {/* Mode Toggle in Header */}
+                    {diagramLanguage === 'mermaid' && (
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            background: '#1c2128',
+                            borderRadius: '6px',
+                            padding: '2px',
+                            border: '1px solid #30363d',
+                            height: '36px',
+                            boxSizing: 'border-box'
+                        }}>
+                            <button
+                                onClick={() => {
+                                    if (editorMode === 'visual') {
+                                        // Sync before searching
+                                        const newCode = MermaidConverter.toMermaid(flowNodes as any, flowEdges as any);
+                                        setCode(newCode);
+                                    }
+                                    setEditorMode('code');
+                                }}
+                                style={{
+                                    padding: '0 12px',
+                                    height: '30px',
+                                    borderRadius: '4px',
+                                    border: 'none',
+                                    background: editorMode === 'code' ? '#00DC82' : 'transparent',
+                                    color: editorMode === 'code' ? '#0d1117' : '#8b949e',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <Code2 size={14} />
+                                Code
+                            </button>
+                            <button
+                                onClick={() => setEditorMode('visual')}
+                                style={{
+                                    padding: '0 12px',
+                                    height: '30px',
+                                    borderRadius: '4px',
+                                    border: 'none',
+                                    background: editorMode === 'visual' ? '#00DC82' : 'transparent',
+                                    color: editorMode === 'visual' ? '#0d1117' : '#8b949e',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <Layers size={14} />
+                                Visual
+                            </button>
+                        </div>
+                    )}
+
+
+                    <button
+                        className="btn-templates"
+                        onClick={() => setShowTemplateModal(true)}
+                        title="Use a Template"
+                        style={{ height: '34px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', background: '#1c2128', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: 'pointer' }}
+                    >
+                        <LayoutTemplate size={18} />
+                        Templates
+                    </button>
+                    <button
+                        className="btn-group"
+                        onClick={handleCreateGroup}
+                        title="Create Group"
+                        style={{ height: '34px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', background: '#1c2128', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: 'pointer' }}
+                    >
+                        <Group size={18} />
+                        Group
+                    </button>
+                    <button
+                        className="btn-enhance"
+                        onClick={handleEnhanceWithAI}
+                        title="Enhance with AI"
+                        style={{ height: '34px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px' }}
+                    >
+                        <Sparkles size={18} />
+                        Enhance
+                    </button>
+                    <DiagramStylePanel
+                        selectedNode={selectedNode}
+                        selectedEdge={selectedEdge}
+                        onNodeUpdate={handleNodeUpdate}
+                        onEdgeUpdate={handleEdgeUpdate}
+                        onArrowCreate={handleArrowCreate}
+                        onBackgroundChange={(color, pattern) => {
+                            setBgColor(color);
+                            setBgPattern(pattern);
+                        }}
+                        currentBackground={{ color: bgColor, pattern: bgPattern }}
+                        availableNodes={getAvailableNodes()}
+                        onFolderAudit={handleFolderAudit}
+
+                        onDelete={handleDelete}
+                        isOpen={showStylePanel}
+                        onToggle={() => setShowStylePanel(!showStylePanel)}
+                    />
+                    <button
+                        onClick={() => setShowCode(!showCode)}
+                        title={showCode ? 'Hide Code' : 'Show Code'}
+                        style={{
+                            height: '36px',
+                            width: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '7px',
+                            borderRadius: '6px',
+                            border: '1px solid #30363d',
+                            background: '#1c2128',
+                            color: '#8b949e',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {showCode ? <Eye size={18} /> : <Code2 size={18} />}
+                    </button>
+                    <button
+                        onClick={handleCopyToClipboard}
+                        title="Copy Transparent PNG to Clipboard"
+                        onContextMenu={(e) => { e.preventDefault(); handleCopyJson(); }}
+                        style={{
+                            height: '36px',
+                            width: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '7px',
+                            borderRadius: '6px',
+                            border: '1px solid #30363d',
+                            background: '#1c2128',
+                            color: '#8b949e',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <Copy size={18} />
+                    </button>
+                    <button
+                        onClick={() => handleExport('png')}
+                        title="Export (Left-click: PNG, Right-click: Transparent PNG)"
+                        onContextMenu={(e) => { e.preventDefault(); handleExport('png', true); }}
+                        style={{
+                            height: '36px',
+                            width: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '7px',
+                            borderRadius: '6px',
+                            border: '1px solid #30363d',
+                            background: '#1c2128',
+                            color: '#8b949e',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <Download size={18} />
+                    </button>
+                    <button
+                        className="btn-save"
+                        onClick={handleSave}
+                        disabled={saving}
+                        title="Save (Auto-saves every 2s)"
+                        style={{ height: '36px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px' }}
+                    >
+                        <Save size={18} />
+                        {saving ? 'Saving...' : 'Save'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Template Modal */}
+            {
+                showTemplateModal && (
+                    <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+                            <div className="modal-header">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <LayoutTemplate size={18} style={{ color: 'var(--brand-solid)' }} />
+                                    <h3>Choose a Template</h3>
+                                </div>
+                            </div>
+                            <div className="modal-body" style={{ padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ padding: '12px 16px', borderBottom: '1px solid #30363d', display: 'flex', gap: '8px' }}>
+                                    {['All', 'System Design', 'Database', 'Algorithms'].map(cat => (
+                                        <button
+                                            key={cat}
+                                            onClick={() => setTemplateCategory(cat)}
+                                            style={{
+                                                background: templateCategory === cat ? '#238636' : '#1c2128',
+                                                color: templateCategory === cat ? '#fff' : '#8b949e',
+                                                border: '1px solid #30363d',
+                                                borderRadius: '20px',
+                                                padding: '4px 12px',
+                                                fontSize: '12px',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            {cat}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div style={{ padding: '16px', overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    {DIAGRAM_TEMPLATES.filter(t => templateCategory === 'All' || t.category === templateCategory).map(template => (
+                                        <div
+                                            key={template.id}
+                                            onClick={() => {
+                                                setCode(template.code);
+                                                setShowTemplateModal(false);
+                                                setEditorMode('code'); // Switch to code to let it process
+                                                setTimeout(() => setEditorMode('visual'), 100); // Optional auto-switch
+                                            }}
+                                            style={{
+                                                border: '1px solid #30363d',
+                                                borderRadius: '6px',
+                                                padding: '12px',
+                                                cursor: 'pointer',
+                                                background: '#0d1117',
+                                                transition: 'all 0.2s',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.borderColor = '#00DC82'}
+                                            onMouseLeave={e => e.currentTarget.style.borderColor = '#30363d'}
+                                        >
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#c9d1d9', marginBottom: '4px' }}>{template.name}</div>
+                                            <div style={{ fontSize: '12px', color: '#8b949e' }}>{template.description}</div>
+                                            <div style={{ marginTop: '8px', fontSize: '10px', color: '#58a6ff', background: 'rgba(56, 139, 253, 0.1)', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
+                                                {template.type}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn-secondary" onClick={() => setShowTemplateModal(false)}>Close</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Diagram AI Modal */}
+            {
+                showAIModal && (
+                    <div className="modal-overlay" onClick={() => setShowAIModal(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Sparkles size={18} style={{ color: 'var(--brand-solid)' }} />
+                                    <h3>{aiMode === 'code-import' ? 'Smart Code Import' : 'Enhance Diagram'}</h3>
+                                </div>
+                                <div style={{ display: 'flex', background: '#1c2128', borderRadius: '6px', padding: '2px' }}>
+                                    <button
+                                        onClick={() => setAiMode('instruction')}
+                                        style={{
+                                            padding: '4px 8px',
+                                            fontSize: '11px',
+                                            background: aiMode === 'instruction' ? '#30363d' : 'transparent',
+                                            color: aiMode === 'instruction' ? '#fff' : '#8b949e',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Instruct
+                                    </button>
+                                    <button
+                                        onClick={() => setAiMode('code-import')}
+                                        style={{
+                                            padding: '4px 8px',
+                                            fontSize: '11px',
+                                            background: aiMode === 'code-import' ? '#30363d' : 'transparent',
+                                            color: aiMode === 'code-import' ? '#fff' : '#8b949e',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Import Code
+                                    </button>
+                                    <button
+                                        onClick={() => setAiMode('logic-flow')}
+                                        style={{
+                                            padding: '4px 8px',
+                                            fontSize: '11px',
+                                            background: aiMode === 'logic-flow' ? '#30363d' : 'transparent',
+                                            color: aiMode === 'logic-flow' ? '#fff' : '#8b949e',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Logic Flow
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="modal-body" style={{ padding: '0 16px' }}>
+                                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                                    {aiMode === 'instruction'
+                                        ? 'Key in a custom prompt or select a style below.'
+                                        : aiMode === 'logic-flow'
+                                            ? 'Paste a complex function or block of code to visualize its internal logic paths (if/else, loops, errors).'
+                                            : 'Paste your SQL, JSON, or Code snippet below to generate a diagram automatically.'}
+                                </p>
+                                <textarea
+                                    className="ai-input-area"
+                                    value={aiInstruction}
+                                    onChange={(e) => setAiInstruction(e.target.value)}
+                                    placeholder={aiMode === 'instruction'
+                                        ? "Describe how you want to change the diagram (e.g. 'Use blue colors', 'Make it left-to-right')..."
+                                        : "Paste SQL ('CREATE TABLE...'), JSON object, or Class definitions here..."}
+                                    rows={6}
+                                />
+                                {aiMode === 'instruction' && (
+                                    <div className="ai-quick-actions">
+                                        <button className="btn-chip" onClick={() => setAiInstruction('Use a Professional Blue/Gray color theme with rounded nodes')}>
+                                            Professional
+                                        </button>
+                                        <button className="btn-chip" onClick={() => setAiInstruction('Use Vibrant Colors and distinct shapes for different node types')}>
+                                            Vibrant
+                                        </button>
+                                        <button className="btn-chip" onClick={() => setAiInstruction('Use a Minimalist Black & White theme')}>
+                                            Minimalist
+                                        </button>
+                                        <button className="btn-chip" onClick={() => setAiInstruction('Make the layout Left-to-Right (LR) instead of Top-Down')}>
+                                            Rotate Layout
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn-secondary" onClick={() => setShowAIModal(false)}>Cancel</button>
+                                <button className="btn-primary" onClick={executeEnhancement} disabled={saving}>
+                                    {saving ? 'Processing...' : (aiMode === 'instruction' ? 'Enhance' : 'Generate Diagram')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+
+            <div className={`editor-content ${showCode ? 'split' : 'full'}`}>
+                <div className="preview-pane" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {/* Render based on mode */}
+                    {editorMode === 'code' || diagramLanguage === 'plantuml' ? (
+                        <DiagramRenderer
+                            code={code}
+                            type={diagramLanguage}
+                            onError={setError}
+                            onNodeSelect={handleNodeSelect}
+                        />
+                    ) : (
+                        <ReactFlowEditor
+                            initialNodes={flowNodes}
+                            initialEdges={flowEdges}
+                            onNodesChange={handleFlowNodesChange}
+                            onEdgesChange={handleFlowEdgesChange}
+                            onNodeClick={handleFlowNodeClick}
+                            onEdgeClick={handleFlowEdgeClick}
+                            onNodeDragStart={handleNodeDragStart}
+                            onNodeDragStop={handleNodeDragStop}
+                            backgroundColor={bgColor}
+                            backgroundVariant={bgPattern}
+                        />
+                    )}
+                    {error && <div className="error-message">{error}</div>}
+                </div>
+                {showCode && (
+                    <div className="code-pane">
+                        <div className="code-header">
+                            <span>{diagramLanguage.toUpperCase()} CODE</span>
+                        </div>
+                        <textarea
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            placeholder="Write your diagram code here..."
+                            spellCheck={false}
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Sleek Notification Toast */}
+            {
+                notification && (
+                    <div style={{
+                        position: 'fixed',
+                        bottom: '24px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: notification.type === 'error' ? '#1f2937' : '#1f2937', // Dark background
+                        border: notification.type === 'error' ? '1px solid #ef4444' : '1px solid #10b981', // Colored border
+                        backdropFilter: 'blur(8px)',
+                        color: '#f9fafb', // White text
+                        padding: '10px 20px',
+                        borderRadius: '8px', // Professional radius
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3)',
+                        zIndex: 9999,
+                        animation: 'slideUp 0.3s ease-out',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px'
+                    }}>
+                        {notification.type === 'success' ? (
+                            <div style={{ color: '#10b981', display: 'flex' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </div>
+                        ) : (
+                            <div style={{ color: '#ef4444', display: 'flex' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                            </div>
+                        )}
+                        <span>{notification.message}</span>
+                        <style>{`
+                        @keyframes slideUp {
+                            from { transform: translate(-50%, 20px); opacity: 0; }
+                            to { transform: translate(-50%, 0); opacity: 1; }
+                        }
+                    `}</style>
+                    </div>
+                )
+            }
+        </div >
+    );
+};
+
+export default DiagramEditor;
