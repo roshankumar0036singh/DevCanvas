@@ -22,6 +22,13 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
+// Type for edge label styles
+interface LabelStyle {
+    fill?: string;
+    fontSize?: number;
+    fontWeight?: number;
+}
+
 import RectangleNode from './flowNodes/RectangleNode';
 import RoundedNode from './flowNodes/RoundedNode';
 import CircleNode from './flowNodes/CircleNode';
@@ -76,10 +83,10 @@ const EditableEdge = ({
     }, [label]);
 
     // Extract custom styles
-    const customColor = (labelStyle as any)?.fill;
-    const customBg = (labelBgStyle as any)?.fill;
-    const customFontSize = (labelStyle as any)?.fontSize;
-    const customFontWeight = (labelStyle as any)?.fontWeight;
+    const customColor = (labelStyle as LabelStyle | undefined)?.fill;
+    const customBg = (labelBgStyle as LabelStyle | undefined)?.fill;
+    const customFontSize = (labelStyle as LabelStyle | undefined)?.fontSize;
+    const customFontWeight = (labelStyle as LabelStyle | undefined)?.fontWeight;
 
     const handleLabelClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -170,7 +177,7 @@ const EditableEdge = ({
                                 setIsHovered(false);
                                 e.currentTarget.style.borderColor = '#30363d';
                                 // Reset bg on leave
-                                e.currentTarget.style.background = customBg !== 'transparent' ? customBg : '#1c2128';
+                                e.currentTarget.style.background = (customBg && customBg !== 'transparent') ? customBg : '#1c2128';
                             }}
                         >
                             {editLabel || 'Click to edit'}
@@ -234,7 +241,7 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
         setNodes(initialNodes);
     }, [initialNodes, setNodes]);
 
-    const handleNodeLabelChange = (nodeId: string, newLabel: string) => {
+    const handleNodeLabelChange = useCallback((nodeId: string, newLabel: string) => {
         setNodes((nds) =>
             nds.map((node) =>
                 node.id === nodeId
@@ -242,7 +249,17 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
                     : node
             )
         );
-    };
+    }, [setNodes]);
+
+    const handleEdgeLabelChange = useCallback((edgeId: string, newLabel: string) => {
+        setEdges((eds) =>
+            eds.map((edge) =>
+                edge.id === edgeId
+                    ? { ...edge, label: newLabel }
+                    : edge
+            )
+        );
+    }, [setEdges]);
 
     useEffect(() => {
         // Add editable type and label change handler to all nodes
@@ -254,7 +271,7 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
             }
         }));
         setNodes(editableNodes);
-    }, [initialNodes, setNodes]);
+    }, [initialNodes, setNodes, handleNodeLabelChange]);
 
     useEffect(() => {
         // Add editable type and label change handler to all edges
@@ -267,7 +284,7 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
             }
         }));
         setEdges(editableEdges);
-    }, [initialEdges, setEdges]);
+    }, [initialEdges, setEdges, handleEdgeLabelChange]);
 
     // Sync changes back to parent (debounced to prevent flickering)
     useEffect(() => {
@@ -275,24 +292,16 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
             onNodesChange(nodes);
         }, 100);
         return () => clearTimeout(timer);
-    }, [nodes]);
+    }, [nodes, onNodesChange]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
             onEdgesChange(edges);
         }, 100);
         return () => clearTimeout(timer);
-    }, [edges]);
+    }, [edges, onEdgesChange]);
 
-    const handleEdgeLabelChange = (edgeId: string, newLabel: string) => {
-        setEdges((eds) =>
-            eds.map((edge) =>
-                edge.id === edgeId
-                    ? { ...edge, label: newLabel }
-                    : edge
-            )
-        );
-    };
+
 
     const onConnect = useCallback(
         (connection: Connection) => {
@@ -318,7 +327,7 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
             };
             setEdges((eds) => addEdge(newEdge, eds));
         },
-        [setEdges]
+        [setEdges, handleEdgeLabelChange]
     );
 
     const handleEdgeClickInternal = useCallback((_: React.MouseEvent, edge: Edge) => {
