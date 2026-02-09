@@ -330,7 +330,10 @@ CRITICAL: SEQUENCE DIAGRAM RULES
 3. Use 'autonumber' at the start.
 4. Group related files into single logical participants (e.g., 'API Layer', 'Storage', 'UI Components') to avoid clutter.
 5. Use clear aliases: \`participant P1 as "API Layer"\`.
-6. DO NOT use square brackets [] for labels in sequence diagrams. Use "Quotes".`;
+6. DO NOT use square brackets [] for labels in sequence diagrams. Use "Quotes".
+7. NO MULTI-LINE PIPE SYNTAX: Mermaid DOES NOT support '|||' for multi-line messages. Use '\n' inside quotes if you need a line break.
+   - Example: A ->> B: "Line 1\nLine 2"
+   - DO NOT start lines with |||; it causes a parse error. Use a single line with \n instead.`;
     } else if (diagramType === 'mindmap') {
         typeSpecificInstructions = `
 CRITICAL: MINDMAP RULES
@@ -556,6 +559,11 @@ export async function analyzeFolderIssues(
     const prompt = `You are a Senior Software Engineer specializing in the component: "${folderPath}".
 Your task is to analyze the logic, security, and performance of this specific folder based on the provided file structure and source code.
 
+CRITICAL: You are auditing THIS FOLDER ONLY: "${folderPath}". 
+ONLY analyze files and logic that are PRESENT in the structure below.
+DO NOT infer or guess the content of files that are not explicitly provided in the source code blocks.
+If you see global configuration files (like root package.json or go.mod) in the context that are NOT relevant to the logic inside "${folderPath}", acknowledge them ONLY if they directly affect this folder's logic.
+
 Target Folder: ${folderPath}
 Structure in view:
 ${fileStructure}
@@ -567,7 +575,10 @@ CRITICAL RULES:
 1. FOCUS ON LOGIC: Analyze provided 'SOURCE_CODE' contents for real bugs.
 2. EVIDENCE REQUIRED: Cite specific lines from the provided source files. 
 3. NO GENERIC ADVICE: Do NOT give general best practices. Give concrete, project-specific proof.
-4. If you don't have enough source code context to find 5 real bugs, report fewer (but at least 1) rather than hallucinating.
+4. SCOPE ENFORCEMENT: You MUST ONLY report issues for files listed in the "Structure in view" above. 
+   - If a file like 'webpack.config.js', '.eslintrc.json', or 'go.mod' appears in the context blocks but is NOT in the "${folderPath}" structure, IGNORE IT.
+   - Do NOT report security findings for root-level config files unless you are specifically auditing the root folder.
+5. NO HALLUCINATION: If the 'SOURCE_CODE' blocks are empty or do not contain enough code to find 5 bugs, DO NOT make them up. Report only what you can prove. If NO source code is provided for "${folderPath}", simply state "No source code available for analysis" instead of reporting global repository issues.
 
 FORMAT:
 # [Bug/Improvement]: [Title]
@@ -766,12 +777,50 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
                 fromDiagram = fromDiagram.replace(/--\)/g, '-->');    // Weird arrow
                 fromDiagram = fromDiagram.replace(/-\)/g, '-->');     // Weird arrow
 
+                fromDiagram = fromDiagram.replace(/-\)/g, '-->');     // Weird arrow
+
                 // Aggressive Cleanup: Remove conversational lines that might have appeared
-                // Example: "This Mermaid code represents..."
+                // Example: "This Mermaid code represents...", "Key Findings:", "**Note:**"
                 fromDiagram = fromDiagram.replace(/^(?:This|Here|The|Note:|Disclaimer:).+$/gm, '');
                 fromDiagram = fromDiagram.replace(/^.*Mermaid code.*$/gm, '');
+
             }
         }
+
+        // Nuclear Trailing Text Stripper:
+        // Strip Markdown headers (###), bold headers (**), lists (1. ), or delimiters (---)
+        // that models often append AFTER the functional diagram logic.
+        const noisePatterns = [
+            /\n\s*(\*\*|#|Key Findings|Findings:)/i,
+            /\n\s*(1\.\s+\*\*|1\.\s+|-\s+\*\*)/,
+            /\n\s*-{3,}\s*$/
+        ];
+
+        for (const pattern of noisePatterns) {
+            const noiseMatch = fromDiagram.match(pattern);
+            if (noiseMatch && noiseMatch.index) {
+                fromDiagram = fromDiagram.substring(0, noiseMatch.index).trim();
+            }
+        }
+
+        // Fix multi-line hallucination (|||) for all diagram types (especially sequenceDiagram)
+        // Convert lines starting with ||| into \n on the previous message line.
+        const lines = fromDiagram.split('\n');
+        const fixedLines = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.trim().startsWith('|||')) {
+                const content = line.trim().substring(3).trim();
+                if (fixedLines.length > 0) {
+                    fixedLines[fixedLines.length - 1] += `\\n${content}`;
+                } else {
+                    fixedLines.push(content);
+                }
+            } else {
+                fixedLines.push(line);
+            }
+        }
+        fromDiagram = fixedLines.join('\n');
 
         // If there are classDef or style directives before the diagram type, move them after
         if (beforeDiagram && (beforeDiagram.includes('classDef') || beforeDiagram.includes('style '))) {
