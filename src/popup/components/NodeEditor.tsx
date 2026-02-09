@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Square, Circle, X } from 'lucide-react';
 
@@ -7,6 +7,14 @@ interface NodeEditorProps {
     currentText: string;
     onUpdate: (id: string, updates: { text?: string; shape?: string; color?: string; strokeStyle?: string; strokeColor?: string }) => void;
     onClose: () => void;
+}
+
+interface NodeUpdates {
+    text?: string;
+    shape?: string;
+    color?: string;
+    strokeColor?: string;
+    strokeStyle?: string;
 }
 
 const COLORS = [
@@ -59,7 +67,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ nodeId, currentText, onUpdate, 
         return () => clearTimeout(timer);
     }, []);
 
-    const updateAll = (updates: any) => {
+    const updateAll = useCallback((updates: NodeUpdates) => {
         onUpdate(nodeId, {
             text: updates.text ?? text,
             color: (updates.color ?? selectedColor) || undefined,
@@ -67,7 +75,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ nodeId, currentText, onUpdate, 
             strokeStyle: updates.strokeStyle ?? strokeStyle,
             strokeColor: (updates.strokeColor ?? strokeColor) || undefined
         });
-    };
+    }, [nodeId, onUpdate, text, selectedColor, selectedShape, strokeStyle, strokeColor]);
 
     const handleTextChange = (val: string) => {
         setText(val);
@@ -97,7 +105,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ nodeId, currentText, onUpdate, 
             }
         }, 500);
         return () => clearTimeout(timer);
-    }, [text]);
+    }, [text, currentText, updateAll]);
 
     const editorContent = (
         <div

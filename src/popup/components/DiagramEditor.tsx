@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Save, Sparkles, Download, Code2, Eye, Layers, LayoutTemplate, Copy, Group } from 'lucide-react';
+import { parseRepoStructure, buildStructureMap, FileNode, stringifyStructNode } from '../../utils/structureParser';
 import AIProcessingOverlay from './AIProcessingOverlay';
 import DiagramRenderer from './DiagramRenderer';
 import DiagramStylePanel from './DiagramStylePanel';
 import ReactFlowEditor from './ReactFlowEditor';
-import { MermaidConverter } from './MermaidConverter';
+import { MermaidConverter, FlowNode, FlowEdge } from './MermaidConverter';
 import { Node, Edge, MarkerType, getRectOfNodes } from 'reactflow';
 import storage from '../../utils/storage';
 import { toPng } from 'html-to-image';
@@ -24,6 +25,24 @@ const DEFAULT_CODE = `graph TD
     B -- No --> D[Debug]
     D --> B`;
 
+interface SelectedNode {
+    id: string;
+    text: string;
+    position: { x: number; y: number };
+    color?: string;
+    shape?: string;
+    strokeColor?: string;
+    strokeStyle?: string;
+    handleColor?: string;
+    textColor?: string;
+    imageUrl?: string;
+    parentNode?: string;
+    strokeWidth?: number;
+    groupShape?: string;
+    labelBgColor?: string;
+    imageSize?: number;
+}
+
 const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpenDocument }) => {
     const [code, setCode] = useState(DEFAULT_CODE);
     const [title, setTitle] = useState('Untitled Diagram');
@@ -32,7 +51,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     const [loading, setLoading] = useState(true);
     const [showCode, setShowCode] = useState(true);
     const [diagramLanguage, setDiagramLanguage] = useState<'mermaid' | 'plantuml'>('mermaid');
-    const [selectedNode, setSelectedNode] = useState<{ id: string; text: string; position: { x: number, y: number } } | null>(null);
+    const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
     const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
     const [showStylePanel, setShowStylePanel] = useState(false);
 
@@ -55,13 +74,47 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     // Template Modal State
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [templateCategory, setTemplateCategory] = useState<string>('All');
-    const [diagramMetadata, setDiagramMetadata] = useState<any>(null);
+    const [diagramMetadata, setDiagramMetadata] = useState<{ repoStructure?: unknown; extraContext?: unknown; viewPath?: string } | null>(null);
     const [history, setHistory] = useState<string[]>([]);
     const [redoStack, setRedoStack] = useState<string[]>([]);
     const [dragStartCode, setDragStartCode] = useState<string | null>(null);
 
+    // Refs to track latest state for unmount saving
+    const flowNodesRef = React.useRef(flowNodes);
+    const flowEdgesRef = React.useRef(flowEdges);
+    const editorModeRef = React.useRef(editorMode);
+    const diagramIdRef = React.useRef(diagramId);
+    const titleRef = React.useRef(title);
 
+    useEffect(() => {
+        flowNodesRef.current = flowNodes;
+        flowEdgesRef.current = flowEdges;
+        editorModeRef.current = editorMode;
+        diagramIdRef.current = diagramId;
+        titleRef.current = title;
+    }, [flowNodes, flowEdges, editorMode, diagramId, title]);
 
+    // Save on Unmount (Critical for tab switching/back button)
+    useEffect(() => {
+        return () => {
+            if (editorModeRef.current === 'visual' && diagramIdRef.current) {
+                console.log('diagramEditor: Unmounting, forcing save of visual state...');
+                const latestNodes = flowNodesRef.current;
+                const latestEdges = flowEdgesRef.current;
+                try {
+                    const latestCode = MermaidConverter.toMermaid(latestNodes as unknown as FlowNode[], latestEdges as FlowEdge[]);
+                    storage.updateDiagram(diagramIdRef.current, {
+                        content: latestCode,
+                        title: titleRef.current,
+                        type: 'mermaid',
+                        updatedAt: Date.now()
+                    });
+                } catch (e: unknown) {
+                    console.error('Failed to auto-save on unmount:', e);
+                }
+            }
+        };
+    }, []);
 
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -136,7 +189,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 setCode(diagram.content);
                 setTitle(diagram.title);
                 setDiagramLanguage(diagram.type === 'plantuml' ? 'plantuml' : 'mermaid');
-                setDiagramMetadata(diagram.metadata);
+                setDiagramMetadata(diagram.metadata || null);
             }
         } else {
             // New diagram
@@ -154,7 +207,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
     const syncVisualToCode = useCallback(
         (nodes: Node[], edges: Edge[]) => {
-            const newCode = MermaidConverter.toMermaid(nodes as any, edges as any);
+            const newCode = MermaidConverter.toMermaid(nodes as unknown as FlowNode[], edges as FlowEdge[]);
             if (newCode !== code) {
                 setCode(newCode);
                 // Don't auto-save immediately on drag to avoid spam, let the auto-save effect handle it
@@ -231,6 +284,10 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
         return () => clearTimeout(timer);
     }, [code, title, diagramId, handleSave]);
 
+
+
+    // ... (existing imports)
+
     const handleFolderAudit = async (folderName: string) => {
         if (!diagramMetadata?.repoStructure) {
             alert('This diagram does not have repository context. Interactive audits are only available for repository maps.');
@@ -242,11 +299,37 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             setAiMessage(`Genie is auditing folder: ${folderName}...`);
             setAiProcessing(true);
 
+            // 1. Analyze scoped structure
+            let structureToAnalyze = diagramMetadata.repoStructure as string;
+
+            // Try to scope it
+            const root = parseRepoStructure(structureToAnalyze);
+            if (root) {
+                const map = buildStructureMap(root);
+                // Try exact match or relative match
+                // folderName might be "src/utils" or just "utils"
+                let targetNode = map.get(folderName);
+
+                // If not found, try to find by ID suffix (e.g. user typed "src/utils" but ID is "root/src/utils")
+                if (!targetNode) {
+                    for (const node of map.values()) {
+                        if (node.id.endsWith(`/${folderName}`) || node.id === folderName) {
+                            targetNode = node;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetNode) {
+                    structureToAnalyze = stringifyStructNode(targetNode);
+                }
+            }
+
             const aiContent = await aiService.analyzeFolderIssues(
                 folderName,
-                diagramMetadata.repoStructure,
+                structureToAnalyze,
                 await storage.getSettings(),
-                diagramMetadata.extraContext
+                diagramMetadata.extraContext as string | undefined
             );
 
             setAiProcessing(false);
@@ -260,9 +343,10 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
                 onOpenDocument(doc.id);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             setAiProcessing(false);
-            alert(`Folder audit failed: ${err.message}`);
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            alert(`Folder audit failed: ${errorMessage}`);
         }
     };
 
@@ -296,10 +380,103 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             if (aiMode === 'logic-flow') {
                 enhancedCode = await aiService.visualizeLogicFlow(aiInstruction, settings);
             } else {
-                if (aiMode === 'code-import') {
-                    instruction = `Analyze the following code snippet and generate a comprehensive Mermaid diagram (e.g. Class Diagram for JSON/Classes, ERD for SQL) that represents the relationships and structure. \n\nIMPORTANT: Return ONLY the Mermaid code. \n\nCode Snippet:\n${aiInstruction}`;
+                // 1. Check for Manual Audit/Diagram Scoping Commands (Only in 'instruction' mode)
+                let scopedStructureMatch: { type: 'audit' | 'diagram', folder: string } | null = null;
+
+                if (aiMode === 'instruction') {
+                    // Improved Regex to handle trailing spaces/text and ensure robust capture
+                    const auditRegex = /^(?:audit|analyze|check)\s+(?:folder|component|path)?\s*["']?([^"']+)["']?/i;
+                    // Diagram regex now skips potential qualifiers like "health of" or "flow of" when capturing the folder name
+                    const diagramRegex = /^(?:diagram|visualize|map)\s+(?:health|flow|logic flow|logic|map|structure)?\s*(?:of|in)?\s*(?:folder|component|path)?\s*["']?([^"']+)["']?/i;
+
+                    const auditMatch = aiInstruction.match(auditRegex);
+                    const diagramMatch = aiInstruction.match(diagramRegex);
+
+                    if (auditMatch && auditMatch[1]) scopedStructureMatch = { type: 'audit', folder: auditMatch[1].trim() };
+                    else if (diagramMatch && diagramMatch[1]) scopedStructureMatch = { type: 'diagram', folder: diagramMatch[1].trim() };
                 }
-                enhancedCode = await aiService.enhanceDiagram(originalCode, diagramLanguage, settings, instruction);
+
+                if (scopedStructureMatch && diagramMetadata?.repoStructure) {
+                    // Parse and Scope
+                    const root = parseRepoStructure(diagramMetadata.repoStructure as string);
+                    if (root) {
+                        const map = buildStructureMap(root);
+                        let targetNode = map.get(scopedStructureMatch.folder);
+
+                        // Robust Lookup
+                        if (!targetNode) {
+                            for (const node of map.values()) {
+                                if (node.id.endsWith(`/${scopedStructureMatch.folder}`) || node.id === scopedStructureMatch.folder) {
+                                    targetNode = node;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (targetNode) {
+                            const scopedStructure = stringifyStructNode(targetNode);
+
+                            if (scopedStructureMatch.type === 'audit') {
+                                // Execute Audit
+                                const aiContent = await aiService.analyzeFolderIssues(
+                                    scopedStructureMatch.folder,
+                                    scopedStructure,
+                                    settings,
+                                    undefined // CRITICAL: Do NOT pass global extraContext (README/Package.json) to avoid pollution
+                                );
+
+                                setAiProcessing(false);
+                                setSaving(false);
+                                setShowAIModal(false);
+
+                                if (aiContent) {
+                                    const doc = await storage.addDocument({
+                                        title: `Audit: ${scopedStructureMatch.folder}`,
+                                        content: aiContent,
+                                        tags: ['github', 'audit', 'folder']
+                                    });
+                                    onOpenDocument(doc.id);
+                                }
+                                return; // Exit, handled as document open
+                            } else {
+                                // Execute Diagram (Visualize Repository)
+                                const isHealthMap = scopedStructureMatch.type === 'diagram' &&
+                                    (aiInstruction.toLowerCase().includes('health') || aiInstruction.toLowerCase().includes('audit'));
+
+                                const isLogicFlow = scopedStructureMatch.type === 'diagram' &&
+                                    (aiInstruction.toLowerCase().includes('flow') || aiInstruction.toLowerCase().includes('logic'));
+
+                                if (isLogicFlow) {
+                                    enhancedCode = await aiService.visualizeLogicFlow(
+                                        `Visualize the logic flow of ${scopedStructureMatch.folder}`,
+                                        settings,
+                                        scopedStructure,
+                                        undefined // CRITICAL: Do NOT pass global extraContext to avoid pollution
+                                    );
+                                    setDiagramLanguage('mermaid');
+                                } else {
+                                    enhancedCode = await aiService.visualizeRepository(
+                                        scopedStructure,
+                                        settings,
+                                        diagramLanguage === 'mermaid' ? 'graph TD' : 'plantuml', // Default layout
+                                        `Focus on the ${scopedStructureMatch.folder} folder. ${aiInstruction}`,
+                                        undefined, // CRITICAL: Do NOT pass global extraContext to avoid pollution
+                                        isHealthMap
+                                    );
+                                }
+                            }
+                        } else {
+                            alert(`Folder "${scopedStructureMatch.folder}" not found in repository structure.`);
+                        }
+                    }
+                }
+
+                if (!enhancedCode) {
+                    if (aiMode === 'code-import') {
+                        instruction = `Analyze the following code snippet and generate a comprehensive Mermaid diagram (e.g. Class Diagram for JSON/Classes, ERD for SQL) that represents the relationships and structure. \n\nIMPORTANT: Return ONLY the Mermaid code. \n\nCode Snippet:\n${aiInstruction}`;
+                    }
+                    enhancedCode = await aiService.enhanceDiagram(originalCode, diagramLanguage, settings, instruction);
+                }
             }
 
             if (enhancedCode) {
@@ -312,10 +489,11 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 setShowAIModal(false);
             }
             setAiProcessing(false);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('AI Enhancement Callback Error:', err);
             setAiProcessing(false);
-            setError(err.message || 'Failed to enhance diagram');
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            setError(errorMessage || 'Failed to enhance diagram');
         } finally {
             setSaving(false);
         }
@@ -359,7 +537,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
                 const exportOptions = {
                     backgroundColor: bgColorToUse,
-                    filter: filterNode as any,
+                    filter: filterNode as (node: HTMLElement) => boolean,
                     width: nodesBounds.width + 100,
                     height: nodesBounds.height + 100,
                     style: {
@@ -388,7 +566,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 if (format === 'png') {
                     const dataUrl = await toPng(container, {
                         backgroundColor: bgColorToUse,
-                        filter: filterNode as any,
+                        filter: filterNode as (node: HTMLElement) => boolean,
                         pixelRatio: 2
                     });
                     const link = window.document.createElement('a');
@@ -614,7 +792,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                     groupShape: updatedNode.data.groupShape,
                     labelBgColor: updatedNode.data.labelBgColor,
                     parentNode: updatedNode.parentNode
-                } as any);
+                } as unknown as { id: string; text: string; position: { x: number; y: number } });
             }
         } else {
             // Code Mode Update (Regex)
@@ -678,15 +856,15 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                         },
                         markerEnd: {
                             type: MarkerType.ArrowClosed,
-                            color: updates.color || (edge.markerEnd as any)?.color || '#0ea5e9',
+                            color: updates.color || (edge.markerEnd as { color?: string })?.color || '#0ea5e9',
                         },
                         labelStyle: {
-                            fill: updates.labelColor || (edge as any).labelStyle?.fill || '#ffffff',
+                            fill: updates.labelColor || (edge as unknown as { labelStyle?: { fill?: string } }).labelStyle?.fill || '#ffffff',
                             fontWeight: 600,
                             fontSize: 14,
                         },
                         labelBgStyle: {
-                            fill: updates.labelBg || (edge as any).labelBgStyle?.fill || 'transparent',
+                            fill: updates.labelBg || (edge as unknown as { labelBgStyle?: { fill?: string } }).labelBgStyle?.fill || 'transparent',
                         },
                         labelBgPadding: [8, 4],
                         labelBgBorderRadius: 4,
@@ -732,7 +910,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     useEffect(() => {
         if (editorMode === 'visual') {
             const timer = setTimeout(() => {
-                const newCode = MermaidConverter.toMermaid(flowNodes as any, flowEdges as any);
+                const newCode = MermaidConverter.toMermaid(flowNodes as unknown as FlowNode[], flowEdges as unknown as FlowEdge[]);
                 if (newCode !== code) {
                     setCode(newCode); // Update code state
                 }
@@ -740,13 +918,141 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             return () => clearTimeout(timer);
         }
         return undefined;
-    }, [flowNodes, flowEdges, editorMode]);
+    }, [flowNodes, flowEdges, editorMode, code]);
 
     const handleFlowEdgesChange = (edges: Edge[]) => {
         setFlowEdges(edges);
     };
 
+
+    const toggleFolderExpansion = (node: Node) => {
+        if (!diagramMetadata?.repoStructure || editorMode !== 'visual') return;
+
+        // 1. Parse Structure
+        // TODO: Memoize this if performance is an issue, but for now it's fine on click.
+        const root = parseRepoStructure(diagramMetadata.repoStructure as string);
+        if (!root) return;
+        const map = buildStructureMap(root);
+
+        // 2. Find clicked node in structure
+        // Node label usually matches folder name.
+        const label = node.data.label;
+        // Clean label (remove HTML if any, though usually clean)
+        const cleanLabel = label.replace(/<[^>]*>/g, '').trim();
+
+        const fileNode: FileNode | undefined = map.get(cleanLabel);
+        // Only expand if it's a folder and we found it
+        if (!fileNode || fileNode.type !== 'folder') return;
+
+        // 3. Check if children exist in flowNodes
+        // We check if any node has this node as its "parent" in our logic (connected source)
+        // Adjust logic: We identifying children by edge connection AND visual placement?
+        // Better: We track them by ID convention or just structure.
+        // Let's use the Structure to know what *should* be there.
+
+        const childrenNames = fileNode.children.map((c: FileNode) => c.name);
+
+        // Find existing nodes that match these children AND are connected to this node
+        const existingChildren = flowNodes.filter(n => {
+            // Check if node ID starts with parent ID (naming convention)
+            // or check if edge exists.
+
+            // Let's use edge check for robustness
+            const isConnected = flowEdges.some(e => e.source === node.id && e.target === n.id);
+            return isConnected && childrenNames.includes(n.data.label);
+        });
+
+        if (existingChildren.length > 0) {
+            // COLLAPSE: Remove children and their descendants
+            const nodesToRemove = new Set<string>();
+            const getDescendants = (parentId: string) => {
+                const children = flowNodes.filter(n => {
+                    const isConnected = flowEdges.some(e => e.source === parentId && e.target === n.id);
+                    return isConnected;
+                });
+                children.forEach(c => {
+                    nodesToRemove.add(c.id);
+                    getDescendants(c.id);
+                });
+            };
+
+            // Only remove nodes that are actually part of the tree structure from this point
+            // We use the fileNode children to be safe, but visual graph might have more.
+            // Let's just remove immediate children found in the graph and their descendants.
+            existingChildren.forEach(c => {
+                nodesToRemove.add(c.id);
+                getDescendants(c.id);
+            });
+
+            setFlowNodes(prev => prev.filter(n => !nodesToRemove.has(n.id)));
+            setFlowEdges(prev => prev.filter(e => !nodesToRemove.has(e.source) && !nodesToRemove.has(e.target)));
+            setNotification({ message: `Collapsed ${cleanLabel}`, type: 'success' });
+
+        } else {
+            // EXPAND: Add children
+            const newNodes: Node[] = [];
+            const newEdges: Edge[] = [];
+
+            const startX = node.position.x;
+            const startY = node.position.y + 150; // 150px below
+            const spacingX = 160; // Horizontal spacing
+
+            // Center the children relative to parent?
+            // width = (children.length - 1) * spacingX
+            const totalWidth = (fileNode.children.length - 1) * spacingX;
+            const startOffset = -totalWidth / 2;
+
+            fileNode.children.forEach((child: FileNode, index: number) => {
+                // simple ID generation
+                const childId = `${node.id}-${child.name.replace(/[^a-zA-Z0-9]/g, '')}`;
+                const isFolder = child.type === 'folder';
+
+                const newNode: Node = {
+                    id: childId,
+                    type: isFolder ? 'rectangle' : 'rectangle', // Use same for now
+                    position: {
+                        x: startX + startOffset + (index * spacingX),
+                        y: startY
+                    },
+                    data: {
+                        label: child.name,
+                        color: isFolder ? '#eab308' : '#3b82f6', // Yellow / Blue
+                        strokeColor: isFolder ? '#ca8a04' : '#2563eb',
+                        imageUrl: isFolder ? 'https://api.iconify.design/material-symbols:folder-open-rounded.svg?color=%23ffffff' : 'https://api.iconify.design/material-symbols:description-rounded.svg?color=%23ffffff',
+                        imageSize: 30
+                    },
+                    // We do NOT set parentNode because we want them connected by edges, not contained.
+                };
+
+                newNodes.push(newNode);
+
+                newEdges.push({
+                    id: `${node.id}-${childId}`,
+                    source: node.id,
+                    target: childId,
+                    type: 'smoothstep',
+                    style: { stroke: '#64748b', strokeDasharray: '5 5' },
+                    animated: true
+                });
+            });
+
+            setFlowNodes(prev => [...prev, ...newNodes]);
+            setFlowEdges(prev => [...prev, ...newEdges]);
+            setNotification({ message: `Expanded ${cleanLabel}`, type: 'success' });
+        }
+    };
+
     const handleFlowNodeClick = (node: Node) => {
+        // Try to toggle expansion first
+        if (diagramMetadata?.repoStructure && node.data.imageUrl && node.data.imageUrl.includes('folder')) {
+            toggleFolderExpansion(node);
+            // Return early to avoid opening style panel? 
+            // Maybe user wants to style it too.
+            // Let's do both or prioritize expansion.
+            // If we expanded/collapsed, maybe don't show panel immediately to allow rapid browsing.
+            return;
+        }
+
         setSelectedNode({
             id: node.id,
             text: node.data.label,
@@ -759,7 +1065,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             textColor: node.data.textColor,
             imageUrl: node.data.imageUrl,
             parentNode: node.parentNode
-        } as any);
+        } as SelectedNode);
         setSelectedEdge(null); // Clear edge selection
         setShowStylePanel(true);
     };
@@ -775,7 +1081,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
         pushToHistory(code);
         if (editorMode === 'visual') {
             const newId = `group_${Date.now()}`;
-            const newGroup: any = {
+            const newGroup: FlowNode = {
                 id: newId,
                 type: 'group',
                 position: { x: 100, y: 100 },
@@ -847,7 +1153,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                 onClick={() => {
                                     if (editorMode === 'visual') {
                                         // Sync before searching
-                                        const newCode = MermaidConverter.toMermaid(flowNodes as any, flowEdges as any);
+                                        const newCode = MermaidConverter.toMermaid(flowNodes as unknown as FlowNode[], flowEdges as unknown as FlowEdge[]);
                                         setCode(newCode);
                                     }
                                     setEditorMode('code');
@@ -1150,7 +1456,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                     value={aiInstruction}
                                     onChange={(e) => setAiInstruction(e.target.value)}
                                     placeholder={aiMode === 'instruction'
-                                        ? "Describe how you want to change the diagram (e.g. 'Use blue colors', 'Make it left-to-right')..."
+                                        ? "Describe changes (e.g. 'Use blue colors') OR use scoped commands: 'audit src/utils', 'health of src/auth', 'flow of src/components'..."
                                         : "Paste SQL ('CREATE TABLE...'), JSON object, or Class definitions here..."}
                                     rows={6}
                                 />

@@ -25,6 +25,9 @@ export interface FlowNode extends Node {
         noteParticipants?: string[];
         order?: number;
         attributes?: Array<{ type: string; name: string; constraint?: string }>;
+        isPieTitle?: boolean;
+        isPieSlice?: boolean;
+        isStateNode?: boolean;
     };
 }
 
@@ -43,6 +46,52 @@ export type FlowEdge = Edge & {
     };
 };
 
+interface SavedStyle {
+    color?: string;
+    strokeColor?: string;
+    strokeStyle?: string;
+    handleColor?: string;
+    imageUrl?: string;
+    imageSize?: number;
+    textColor?: string;
+    strokeWidth?: number;
+    groupShape?: 'rectangle' | 'rounded';
+    labelBgColor?: string;
+    width?: string | number;
+    height?: string | number;
+}
+
+interface SavedEdge {
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+    style?: Record<string, string | number | undefined>;
+    labelStyle?: Record<string, string | number | undefined>;
+    labelBgStyle?: Record<string, string | number | undefined>;
+    label?: string;
+}
+
+interface SequenceItem {
+    type: 'message' | 'note';
+    source?: string;
+    target?: string;
+    label?: string;
+    arrow?: string;
+    position?: string;
+    participants?: string[];
+}
+
+interface SequenceExportItem {
+    type: 'message' | 'note';
+    src?: string;
+    tgt?: string;
+    arrow?: string;
+    label?: string;
+    position?: string;
+    participants?: string[];
+}
+
 export class MermaidConverter {
 
 
@@ -50,6 +99,28 @@ export class MermaidConverter {
      * Convert React Flow to Mermaid code
      */
     static toMermaid(nodes: FlowNode[], edges: FlowEdge[]): string {
+        // Check for Pie Chart
+        const pieTitleNode = nodes.find(n => n.data.isPieTitle);
+        if (pieTitleNode) {
+            let code = `pie title ${pieTitleNode.data.label}\n`;
+            // Find slices (connected to center or just all other nodes?)
+            // Better to find connected nodes if possible, or just all non-center.
+            const slices = nodes.filter(n => n.id !== pieTitleNode.id && n.data.isPieSlice);
+            slices.forEach(slice => {
+                const text = slice.data.label || 'Slice: 0';
+                // Expect format "Label: Value"
+                const parts = text.split(':');
+                let label = parts[0].trim();
+                const value = parts.length > 1 ? parts[1].trim() : '0';
+
+                // Sanitize label
+                label = label.replace(/"/g, "'");
+
+                code += `    "${label}" : ${value}\n`;
+            });
+            return code;
+        }
+
         // Collect custom edge styles/metadata
         const edgesToSave = edges.map(edge => ({
             source: edge.source,
@@ -64,7 +135,7 @@ export class MermaidConverter {
         const edgesComment = edgesToSave.length > 0 ? `\n%% edges: ${JSON.stringify(edgesToSave)}` : '';
 
         // Collect custom styles for metadata persistence
-        const stylesToSave: Record<string, any> = {};
+        const stylesToSave: Record<string, SavedStyle> = {};
         nodes.forEach(node => {
             if (node.data.color !== '#1e293b' || node.data.strokeColor !== '#0ea5e9' || node.data.strokeStyle !== 'solid' || (node.data.handleColor && node.data.handleColor !== '#00DC82') || node.data.imageUrl) {
                 stylesToSave[node.id] = {};
@@ -77,7 +148,10 @@ export class MermaidConverter {
                 if (node.data.textColor) stylesToSave[node.id].textColor = node.data.textColor;
                 if (node.data.strokeWidth) stylesToSave[node.id].strokeWidth = node.data.strokeWidth;
                 if (node.data.groupShape) stylesToSave[node.id].groupShape = node.data.groupShape;
+                if (node.data.groupShape) stylesToSave[node.id].groupShape = node.data.groupShape;
                 if (node.data.labelBgColor) stylesToSave[node.id].labelBgColor = node.data.labelBgColor;
+                if (node.style?.width) stylesToSave[node.id].width = node.style.width;
+                if (node.style?.height) stylesToSave[node.id].height = node.style.height;
             }
         });
 
@@ -112,7 +186,7 @@ export class MermaidConverter {
                 // sanitizedId: "User_Interface".
                 // Code: participant User_Interface as "User Interface"
 
-                let labelText = p.data.label || rawId;
+                const labelText = p.data.label || rawId;
                 const label = labelText && labelText !== sanitizedId ? ` as "${labelText.replace(/"/g, "'").replace(/\n/g, '<br/>')}"` : '';
 
                 code += `    participant ${sanitizedId}${label}\n`;
@@ -122,7 +196,7 @@ export class MermaidConverter {
             sequenceEdges.sort((a, b) => (a.data?.order || 0) - (b.data?.order || 0));
 
             // Group edges by message order to avoid duplicates (we have 2 edges per message now)
-            const messageMap = new Map<number, any>();
+            const messageMap = new Map<number, SequenceExportItem>();
 
             sequenceEdges.forEach(edge => {
                 const order = edge.data?.order;
@@ -136,7 +210,7 @@ export class MermaidConverter {
 
                     const arrow = edge.data?.originalArrow || '->>';
                     if (srcId && tgtId) {
-                        messageMap.set(order, { type: 'message', src: srcId, tgt: tgtId, arrow, label: edge.label });
+                        messageMap.set(order, { type: 'message', src: srcId, tgt: tgtId, arrow, label: String(edge.label || '') });
                     }
                 }
             });
@@ -153,26 +227,26 @@ export class MermaidConverter {
                     type: 'note',
                     position,
                     participants,
-                    label: note.data.label
+                    label: String(note.data.label || '')
                 });
             });
 
             // Export messages and notes in order
             Array.from(messageMap.entries())
                 .sort(([a], [b]) => a - b)
-                .forEach(([_, item]: [number, any]) => {
+                .forEach(([_, item]) => {
                     if (item.type === 'message') {
                         const label = item.label ? `: ${String(item.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}` : '';
                         code += `    ${item.src}${item.arrow}${item.tgt}${label}\n`;
                     } else if (item.type === 'note') {
-                        const participants = item.participants.join(',');
+                        const participants = (item.participants || []).join(',');
                         const label = item.label ? `: ${String(item.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}` : '';
                         code += `    Note ${item.position} ${participants}${label}\n`;
                     }
                 });
 
             // Save layout/dimensions for notes
-            const layoutData: Record<string, any> = {};
+            const layoutData: Record<string, { w?: string | number, h?: string | number }> = {};
             noteNodes.forEach(node => {
                 if (node.width || node.height || node.style?.width || node.style?.height) {
                     layoutData[node.id] = {
@@ -206,8 +280,38 @@ export class MermaidConverter {
             });
 
             // For ERD we also append styles/layout at end
+        } else if (nodes.some(n => n.data.isStateNode)) {
+            code = 'stateDiagram-v2\n';
+
+
+            nodes.forEach(node => {
+                if (node.id === '[*]') return; // Skip start/end in defs, handled in edges or implicit
+                // If label differs from ID, we need 'state "Label" as ID'
+                // Or if ID has special chars.
+
+                const label = node.data.label || node.id;
+
+                // For now assume ID is safe or we use it.
+                // State diagram supports "state "Desc" as Alias"
+
+                // If label is NOT the ID (and not Start/End which is '[*]')
+                if (label !== node.id && node.id !== '[*]') {
+                    code += `    state "${label.replace(/"/g, "'")}" as ${node.id}\n`;
+                }
+            });
+
+            edges.forEach(edge => {
+                const source = edge.source;
+                const target = edge.target;
+                const label = edge.label ? `: ${edge.label}` : '';
+                const arrow = '-->'; // Standard state transition
+
+                code += `    ${source} ${arrow} ${target}${label}\n`;
+            });
+
+            return code;
         } else {
-            // Standard Flowchart
+            // Default to Graph/Flowchart
             code = 'graph TD\n';
             const positions: Record<string, { x: number, y: number }> = {};
             const groups = nodes.filter(n => n.type === 'group');
@@ -253,7 +357,16 @@ export class MermaidConverter {
             });
 
             edges.forEach(edge => {
-                const arrow = this.getArrowSymbol(edge.data?.originalArrow || '-->', edge.style);
+                let arrow = edge.data?.originalArrow || '-->';
+
+                // Enforce valid Flowchart arrows
+                if (arrow === '->' || arrow === '->>') arrow = '-->';
+                if (arrow === '-.->>' || arrow === '-.->') arrow = '-.->';
+                if (arrow === '=>' || arrow === '==>>') arrow = '==>';
+
+                // Fallback to getArrowSymbol for style overrides
+                arrow = this.getArrowSymbol(arrow, edge.style);
+
                 const label = edge.label
                     ? `|"${String(edge.label).replace(/"/g, "'").replace(/\n/g, '<br/>')}"|`
                     : '';
@@ -352,9 +465,9 @@ export class MermaidConverter {
         }
     }
 
-    private static getArrowSymbol(arrow: string, style?: any): string {
+    private static getArrowSymbol(arrow: string, style?: FlowEdge['style']): string {
         // Preserve original arrow type if possible
-        if (style?.strokeDasharray) return '-.->';
+        if (style?.strokeDasharray && style.strokeDasharray !== '0' && style.strokeDasharray !== 'none') return '-.->';
         if (style?.strokeWidth === 3) return '==>';
         return arrow || '-->';
     }
@@ -364,7 +477,17 @@ export class MermaidConverter {
      */
     static toReactFlow(mermaidCode: string): { nodes: FlowNode[], edges: FlowEdge[] } {
 
-        // Handle ER diagrams separately (basic support)
+        // Handle Pie Charts
+        if (mermaidCode.trim().startsWith('pie')) {
+            return this.parsePieChart(mermaidCode);
+        }
+
+        // Handle Mindmaps
+        if (mermaidCode.trim().startsWith('mindmap')) {
+            return this.parseMindmap(mermaidCode);
+        }
+
+        // Handle ER diagrams
         if (mermaidCode.includes('erDiagram')) {
             return this.parseERDiagram(mermaidCode);
         }
@@ -374,8 +497,297 @@ export class MermaidConverter {
             return this.parseSequenceDiagram(mermaidCode);
         }
 
+        // Handle State diagrams
+        if (mermaidCode.includes('stateDiagram') || mermaidCode.includes('stateDiagram-v2')) {
+            return this.parseStateDiagram(mermaidCode);
+        }
+
+
+
+        // Fallback for known unsupported types to prevent empty screen
+        if (mermaidCode.includes('gitGraph') || mermaidCode.includes('classDiagram') || mermaidCode.includes('journey') || mermaidCode.includes('requirementDiagram')) {
+            return {
+                nodes: [{
+                    id: 'unsupported_warning',
+                    type: 'rectangle',
+                    position: { x: 250, y: 250 }, // Center-ish
+                    data: {
+                        label: `Visual Editing Not Supported\nfor this Diagram Type.\n\nPlease edit in "Code" mode.`,
+                        color: '#fef2f2',
+                        strokeColor: '#ef4444',
+                        textColor: '#991b1b',
+                        labelBgColor: '#fef2f2'
+                    },
+                    style: {
+                        width: 300,
+                        height: 100,
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        border: '2px dashed #ef4444'
+                    }
+                }],
+                edges: []
+            };
+        }
+
         // Default to Graph/Flowchart
         return this.parseFlowchart(mermaidCode);
+    }
+
+    private static parseMindmap(mermaidCode: string): { nodes: FlowNode[], edges: FlowEdge[] } {
+        const nodes: FlowNode[] = [];
+        const edges: FlowEdge[] = [];
+        const lines = mermaidCode.split('\n').filter(l => l.trim() && !l.trim().startsWith('mindmap'));
+
+        const stack: { id: string, indent: number }[] = [];
+        let nodeCount = 0;
+
+        lines.forEach(line => {
+            const match = line.match(/^(\s*)(.*)/);
+            if (!match) return;
+
+            const indent = match[1].length;
+            let label = match[2].trim();
+
+            // Extract optional shape and classes
+            // e.g. root((Label)):::class
+            // or Node:::class
+
+            let className = '';
+            if (label.includes(':::')) {
+                const parts = label.split(':::');
+                label = parts[0];
+                className = parts[1];
+            }
+
+            let type: FlowNode['type'] = 'rounded';
+
+            // Simple shape detection
+            if (label.startsWith('((') && label.endsWith('))')) {
+                label = label.slice(2, -2);
+                type = 'circle';
+            } else if (label.startsWith('(') && label.endsWith(')')) {
+                label = label.slice(1, -1);
+                type = 'rounded';
+            } else if (label.startsWith('[') && label.endsWith(']')) {
+                label = label.slice(1, -1);
+                type = 'rectangle';
+            } else if (label.startsWith('root((') && label.endsWith('))')) {
+                label = label.replace(/^root\(\(/, '').replace(/\)\)$/, '');
+                type = 'circle';
+                // Handle 'root((Label))' specific syntax
+            }
+
+            const id = `mm_${nodeCount++}`;
+
+            // Determine parent based on indentation
+            while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+                stack.pop();
+            }
+
+            const parent = stack.length > 0 ? stack[stack.length - 1] : null;
+
+            nodes.push({
+                id,
+                type,
+                position: { x: 0, y: 0 },
+                data: { label, color: className.includes('critical') ? '#fee2e2' : undefined }
+            });
+
+            if (parent) {
+                edges.push({
+                    id: `e_${parent.id}_${id}`,
+                    source: parent.id,
+                    target: id,
+                    type: 'smoothstep', // Mindmap branches look good with curves usually, but smoothstep is ok
+                    style: { stroke: '#94a3b8' }
+                });
+            }
+
+            stack.push({ id, indent });
+        });
+
+        // Apply basic auto-layout using dagre
+        return this.applyLayout(nodes, edges, 'LR'); // Mindmaps usually grow right
+    }
+
+    private static parseStateDiagram(mermaidCode: string): { nodes: FlowNode[], edges: FlowEdge[] } {
+        const nodes: FlowNode[] = [];
+        const edges: FlowEdge[] = [];
+        const lines = mermaidCode.split('\n');
+        const nodeMap = new Map<string, string>(); // Id -> Label
+
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('stateDiagram') || trimmed.startsWith('classDef')) return;
+
+            // 1. Parse Transitions: A --> B : Label
+            // Supports: [*] --> B
+            const transitionMatch = trimmed.match(/^([a-zA-Z0-9_[\]*]+)\s*-->\s*([a-zA-Z0-9_[\]*]+)(?:\s*:\s*(.*))?$/);
+            if (transitionMatch) {
+                const source = transitionMatch[1];
+                const target = transitionMatch[2];
+                const label = transitionMatch[3];
+
+                [source, target].forEach(id => {
+                    if (!nodeMap.has(id)) {
+                        nodeMap.set(id, id === '[*]' ? 'Start/End' : id);
+                        nodes.push({
+                            id,
+                            type: id === '[*]' ? 'circle' : 'rounded',
+                            position: { x: 0, y: 0 },
+                            data: {
+                                label: nodeMap.get(id)!,
+                                isStateNode: true
+                            }
+                        });
+                    }
+                });
+
+                edges.push({
+                    id: `e_${source}_${target}_${edges.length}`,
+                    source,
+                    target,
+                    label,
+                    type: 'smoothstep',
+                    style: { stroke: '#0ea5e9' }
+                });
+                return;
+            }
+
+            // 2. Parse State Definitions: state "Description" as ID
+            const stateDefMatch = trimmed.match(/^state\s+"(.+)"\s+as\s+([a-zA-Z0-9_]+)$/);
+            if (stateDefMatch) {
+                const label = stateDefMatch[1];
+                const id = stateDefMatch[2];
+                nodeMap.set(id, label);
+                // Check if node exists and update label, or create
+                const existing = nodes.find(n => n.id === id);
+                if (existing) {
+                    existing.data.label = label;
+                } else {
+                    nodes.push({
+                        id,
+                        type: 'rounded',
+                        position: { x: 0, y: 0 },
+                        data: {
+                            label,
+                            isStateNode: true
+                        }
+                    });
+                }
+            }
+        });
+
+        return this.applyLayout(nodes, edges, 'TD');
+    }
+
+    private static applyLayout(nodes: FlowNode[], edges: FlowEdge[], direction: 'TD' | 'LR' = 'TD'): { nodes: FlowNode[], edges: FlowEdge[] } {
+        const g = new dagre.graphlib.Graph();
+        g.setGraph({ rankdir: direction, ranksep: 80, nodesep: 50 });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        nodes.forEach(node => {
+            const width = Math.max(100, (node.data.label?.length || 0) * 8 + 20);
+            const height = 50;
+            g.setNode(node.id, { width, height });
+        });
+
+        edges.forEach(edge => {
+            g.setEdge(edge.source, edge.target);
+        });
+
+        dagre.layout(g);
+
+        return {
+            nodes: nodes.map(node => {
+                const pos = g.node(node.id);
+                return {
+                    ...node,
+                    position: {
+                        x: pos.x - (g.node(node.id).width / 2),
+                        y: pos.y - (g.node(node.id).height / 2)
+                    }
+                };
+            }),
+            edges
+        };
+    }
+
+    private static parsePieChart(mermaidCode: string): { nodes: FlowNode[], edges: FlowEdge[] } {
+        const nodes: FlowNode[] = [];
+        const edges: FlowEdge[] = [];
+        const lines = mermaidCode.split('\n');
+
+        // Find title
+        let title = 'Pie Chart';
+        const titleLine = lines.find(l => l.trim().startsWith('title'));
+        const pieLine = lines.find(l => l.trim().startsWith('pie'));
+
+        if (titleLine) {
+            title = titleLine.replace('title', '').trim();
+        } else if (pieLine && pieLine.includes('title')) {
+            title = pieLine.split('title')[1].trim();
+        }
+
+        const centerId = 'pie_center';
+        nodes.push({
+            id: centerId,
+            type: 'circle',
+            position: { x: 400, y: 300 },
+            data: {
+                label: title,
+                isPieTitle: true,
+                color: '#f59e0b',
+                strokeColor: '#d97706',
+                textColor: '#ffffff'
+            },
+            style: { width: 150, height: 150, fontWeight: 700, fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+        });
+
+        const radius = 250;
+        let angle = 0;
+        let sliceIndex = 0;
+
+        const slices: { label: string, value: string }[] = [];
+        lines.forEach(line => {
+            const match = line.match(/^\s*"(.+)"\s*:\s*([\d.]+)/);
+            if (match) {
+                slices.push({ label: match[1], value: match[2] });
+            }
+        });
+
+        const angleStep = (2 * Math.PI) / (slices.length || 1);
+
+        slices.forEach(slice => {
+            const id = `slice_${sliceIndex++}`;
+
+            // Calculate circular layout
+            const x = 400 + radius * Math.cos(angle) - 75; // -75 to center 150px node
+            const y = 300 + radius * Math.sin(angle) - 25;
+            angle += angleStep;
+
+            nodes.push({
+                id,
+                type: 'rectangle',
+                position: { x, y },
+                data: { label: `${slice.label}: ${slice.value}`, isPieSlice: true }
+            });
+
+            edges.push({
+                id: `edge_${id}`,
+                source: centerId,
+                target: id,
+                type: 'straight',
+                style: { stroke: '#94a3b8', strokeWidth: 2 }
+            });
+        });
+
+        return { nodes, edges };
     }
 
     private static safeParse(jsonString: string, type: 'object' | 'array') {
@@ -402,8 +814,8 @@ export class MermaidConverter {
 
         // Metadata for saved positions and styles
         let savedPositions: Record<string, { x: number, y: number }> = {};
-        let savedStyles: Record<string, any> = {};
-        let savedEdges: any[] = [];
+        let savedStyles: Record<string, SavedStyle> = {};
+        let savedEdges: SavedEdge[] = [];
 
         // Helper to safely parse JSON from metadata lines handled by this.safeParse
 
@@ -413,10 +825,10 @@ export class MermaidConverter {
                 if (data) savedPositions = data;
             } else if (line.trim().startsWith('%% styles:')) {
                 const data = this.safeParse(line.replace('%% styles:', ''), 'object');
-                if (data) savedStyles = data;
+                if (data) savedStyles = data as Record<string, SavedStyle>;
             } else if (line.trim().startsWith('%% edges:')) {
                 const data = this.safeParse(line.replace('%% edges:', ''), 'array');
-                if (data) savedEdges = data;
+                if (data) savedEdges = data as SavedEdge[];
             }
         });
 
@@ -496,23 +908,16 @@ export class MermaidConverter {
                 return;
             }
 
-            // Edge definition: Source --> Target: Label OR Source -->|Label| Target
-            // Prioritize edge matching to avoid "A[Start] --> B" being matched as a weird node "A" with label "Start] --> B"
-            // Edge definition: Source --> Target: Label OR Source -->|Label| Target
-            // Prioritize edge matching to avoid "A[Start] --> B" being matched as a weird node "A" with label "Start] --> B"
-            // Supported formats:
-            // A --> B
-            // A -->|Label| B
-            // A -- Label --> B
-            // A -- Label --- B
-            const edgeMatch = line.match(/^\s*([A-Za-z0-9_]+)(\s*[( [{})]+.*?[:\]})]+)?\s*(?:(-+>?|-+\.?->|=+>?)|--\s+(.+?)\s+(-->|---))\s*(?:\|(.+?)\|)?\s*([A-Za-z0-9_]+)(\s*[( [{})]+.*?[:\]})]+)?(?:\s*:\s*(.*))?$/);
+
+            const edgeRegex = /^\s*([A-Za-z0-9_.-]+)(\s*[( [{]{1,2}.*?[) \]}]{1,2})?\s*(?:(-+>?|-+\.?->|=+>?)|--\s+(?:"?(.+?)"?)\s+(-->|---))\s*(?:\|(?:("?)(.+?)\6)\|)?\s*([A-Za-z0-9_.-]+)(\s*[( [{]{1,2}.*?[) \]}]{1,2})?(?:\s*:\s*(.*))?$/;
+            const edgeMatch = line.match(edgeRegex);
             if (edgeMatch) {
                 const source = edgeMatch[1];
                 const sourceDef = edgeMatch[2] ? edgeMatch[2].trim() : '';
                 const arrow = edgeMatch[3] || edgeMatch[5];
-                const rawLabel = edgeMatch[4] || edgeMatch[6] || edgeMatch[9] || '';
-                const target = edgeMatch[7];
-                const targetDef = edgeMatch[8] ? edgeMatch[8].trim() : '';
+                const rawLabel = edgeMatch[4] || edgeMatch[7] || edgeMatch[10] || '';
+                const target = edgeMatch[8];
+                const targetDef = edgeMatch[9] ? edgeMatch[9].trim() : '';
                 let label = rawLabel.trim();
 
                 if ((label.startsWith('"') && label.endsWith('"')) || (label.startsWith("'") && label.endsWith("'"))) {
@@ -598,29 +1003,53 @@ export class MermaidConverter {
 
                 if (currentSubgraph) {
                     const sNode = nodeMap.get(source);
-                    if (sNode && !sNode.parentNode) { sNode.parentNode = currentSubgraph; sNode.extent = 'parent'; }
+                    // stricter parenting: only parent if not already parented AND defined in this subgraph block
+                    // CRITICAL: Prevent self-reference (e.g. subgraph A -> node A inside)
+                    if (sNode && !sNode.parentNode && sNode.id !== currentSubgraph) {
+                        sNode.parentNode = currentSubgraph;
+                        sNode.extent = 'parent';
+                    }
+
                     const tNode = nodeMap.get(target);
-                    if (tNode && !tNode.parentNode) { tNode.parentNode = currentSubgraph; tNode.extent = 'parent'; }
+                    if (tNode && !tNode.parentNode && tNode.id !== currentSubgraph) {
+                        tNode.parentNode = currentSubgraph;
+                        tNode.extent = 'parent';
+                    }
                 }
 
                 let cleanLabel = label.replace(/"/g, "'").replace(/<br\/>/g, '\n');
                 if (cleanLabel === '0,0,0,0' || cleanLabel.match(/^rgba?\(0,\s*0,\s*0,\s*0\)/)) cleanLabel = '';
 
-                // Better matching for saved edges.
-                // 1. Try exact source/target match + handle match if handles exist
-                // 2. Fallback to just source/target match if handles are compatible
+                // Duplicate Check: Prevent adding exact same edge twice
+                const duplicateExists = edges.some(e =>
+                    e.source === source &&
+                    e.target === target &&
+                    e.label === cleanLabel &&
+                    e.data?.originalArrow === arrow
+                );
+                if (duplicateExists) return;
+
+                // Better matching for saved edges with LABEL awareness
                 const savedHandle = savedEdges.find(se => {
                     const matchSrc = se.source === source;
                     const matchTgt = se.target === target;
                     if (!matchSrc || !matchTgt) return false;
 
-                    // If we have index based matching? 
-                    // For now, let's assume one edge per pair unless distinct handles.
+                    // If saved edge has a label, it MUST match. If it doesn't, we only match if current edge also has no label (or we're lenient)
+                    // Strict match on label prevents "swapping" of styles between two edges A->B
+                    if (se.label && cleanLabel && se.label !== cleanLabel) return false;
+
+                    // If one has label and other doesn't? 
+                    // Let's rely on the fact that if we saved it, we saved the label.
                     return true;
                 });
 
+                const labelHash = cleanLabel ? Array.from(cleanLabel).reduce((acc, char) => acc + char.charCodeAt(0), 0) : 0;
+                // Use a safer index based on content, or just standard enumeration but filtered by uniqueness
+                const edgeIndex = edges.filter(e => e.source === source && e.target === target).length;
+
                 const edge: FlowEdge = {
-                    id: `${source}-${target}-${edges.length}`,
+                    id: `${source}-${target}-${labelHash}-${edgeIndex}`, // ID includes hash, so label change = new ID (correct)
                     source: source!,
                     target: target!,
                     sourceHandle: savedHandle?.sourceHandle,
@@ -633,9 +1062,12 @@ export class MermaidConverter {
                 };
 
                 if (savedHandle) {
-                    if (savedHandle.style) edge.style = { ...edge.style, ...savedHandle.style };
-                    if (savedHandle.labelStyle) edge.labelStyle = { ...edge.labelStyle, ...savedHandle.labelStyle };
-                    if (savedHandle.labelBgStyle) edge.labelBgStyle = { ...edge.labelBgStyle, ...savedHandle.labelBgStyle };
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (savedHandle.style) edge.style = { ...edge.style, ...(savedHandle.style as any) };
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (savedHandle.labelStyle) edge.labelStyle = { ...edge.labelStyle, ...(savedHandle.labelStyle as any) };
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (savedHandle.labelBgStyle) edge.labelBgStyle = { ...edge.labelBgStyle, ...(savedHandle.labelBgStyle as any) };
                 }
 
                 edges.push(edge);
@@ -644,7 +1076,7 @@ export class MermaidConverter {
 
             // Node definition: ID[Label] or ID(Label) etc.
             // Check this AFTER edge match
-            const nodeMatch = line.match(/^\s*([A-Za-z0-9_]+)\s*([(\[{]{1,2})(.+?)([)\]}]{1,2})\s*$/);
+            const nodeMatch = line.match(/^\s*([A-Za-z0-9_]+)\s*([([{]{1,2})(.+?)([)\]}]{1,2})\s*$/);
             if (nodeMatch) {
                 const id = nodeMatch[1];
                 const openBracket = nodeMatch[2];
@@ -734,14 +1166,22 @@ export class MermaidConverter {
                 if (style) {
                     if (style.color) node.data.color = style.color;
                     if (style.strokeColor) node.data.strokeColor = style.strokeColor;
-                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle;
+                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle as 'solid' | 'dashed' | 'dotted';
                     if (style.handleColor) node.data.handleColor = style.handleColor;
                     if (style.imageUrl) node.data.imageUrl = style.imageUrl;
                     if (style.imageSize) node.data.imageSize = style.imageSize;
                     if (style.textColor) node.data.textColor = style.textColor;
                     if (style.strokeWidth) node.data.strokeWidth = style.strokeWidth;
                     if (style.groupShape) node.data.groupShape = style.groupShape;
+                    if (style.groupShape) node.data.groupShape = style.groupShape;
                     if (style.labelBgColor) node.data.labelBgColor = style.labelBgColor;
+                    if (style.width || style.height) {
+                        node.style = {
+                            ...node.style,
+                            width: style.width,
+                            height: style.height
+                        };
+                    }
                 }
             });
         }
@@ -761,8 +1201,8 @@ export class MermaidConverter {
 
         // Metadata for saved positions and styles
         let savedPositions: Record<string, { x: number, y: number }> = {};
-        let savedStyles: Record<string, any> = {};
-        let savedEdges: any[] = [];
+        let savedStyles: Record<string, SavedStyle> = {};
+        let savedEdges: SavedEdge[] = [];
 
         // First pass: Extract metadata comments
         lines.forEach(line => {
@@ -927,7 +1367,7 @@ export class MermaidConverter {
                 if (style) {
                     if (style.color) node.data.color = style.color;
                     if (style.strokeColor) node.data.strokeColor = style.strokeColor;
-                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle;
+                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle as 'solid' | 'dashed' | 'dotted';
                     if (style.handleColor) node.data.handleColor = style.handleColor;
                 }
             });
@@ -963,7 +1403,7 @@ export class MermaidConverter {
             }
         });
 
-        const sequenceItems: any[] = [];
+        const sequenceItems: SequenceItem[] = [];
         // Second pass: Find messages, notes and inferred participants
         lines.forEach(line => {
             const msgMatch = line.match(/^\s*(?:([A-Za-z0-9_.-]+)|"([^"]+)")\s*((?:-+|={2,})>+)\s*(?:([A-Za-z0-9_.-]+)|"([^"]+)")\s*:\s*(.*)/);
@@ -996,21 +1436,21 @@ export class MermaidConverter {
         });
 
         // Metadata for saved styles and edges
-        let savedStyles: Record<string, any> = {};
-        let savedEdges: any[] = [];
-        let savedLayout: Record<string, any> = {};
+        let savedStyles: Record<string, SavedStyle> = {};
+        let savedEdges: SavedEdge[] = [];
+        let savedLayout: Record<string, { w?: number, h?: number }> = {};
 
         // Extract metadata comments (layout, styles, edges)
         lines.forEach(line => {
             if (line.trim().startsWith('%% styles:')) {
                 const data = this.safeParse(line.replace('%% styles:', ''), 'object');
-                if (data) savedStyles = data;
+                if (data) savedStyles = data as Record<string, SavedStyle>;
             } else if (line.trim().startsWith('%% edges:')) {
                 const data = this.safeParse(line.replace('%% edges:', ''), 'array');
-                if (data) savedEdges = data;
+                if (data) savedEdges = data as SavedEdge[];
             } else if (line.trim().startsWith('%% layout:')) {
                 const data = this.safeParse(line.replace('%% layout:', ''), 'object');
-                if (data) savedLayout = data;
+                if (data) savedLayout = data as Record<string, { w?: number, h?: number }>;
             }
         });
 
@@ -1050,7 +1490,7 @@ export class MermaidConverter {
                 if (style) {
                     if (style.color) node.data.color = style.color;
                     if (style.strokeColor) node.data.strokeColor = style.strokeColor;
-                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle;
+                    if (style.strokeStyle) node.data.strokeStyle = style.strokeStyle as 'solid' | 'dashed' | 'dotted';
                     if (style.handleColor) node.data.handleColor = style.handleColor;
                     if (style.textColor) node.data.textColor = style.textColor;
                     if (style.strokeWidth) node.data.strokeWidth = style.strokeWidth;
@@ -1097,10 +1537,10 @@ export class MermaidConverter {
         nodes: FlowNode[],
         _edges: FlowEdge[],
         participants: Map<string, { label: string, index: number }>,
-        items: any[],
-        savedStyles: Record<string, any> = {},
-        savedEdges: any[] = [],
-        savedLayout: Record<string, any> = {}
+        items: SequenceItem[],
+        savedStyles: Record<string, SavedStyle> = {},
+        savedEdges: SavedEdge[] = [],
+        savedLayout: Record<string, { w?: number, h?: number }> = {}
     ): { nodes: FlowNode[], edges: FlowEdge[] } {
         const layoutNodes: FlowNode[] = [];
         const layoutEdges: FlowEdge[] = [];
@@ -1119,7 +1559,7 @@ export class MermaidConverter {
 
             // Find original node to preserve styles
             const originalNode = nodes.find(n => n.id === id || n.data?.participantId === id);
-            const originalData = originalNode?.data || {} as any;
+            const originalData = (originalNode?.data || {}) as Partial<FlowNode['data']>;
             layoutNodes.push({
                 id: `participant_${id}`,
                 type: 'rectangle', // Use default or 'input'/'output' if needed, but default is fine. Actually 'rectangle' in our system?
@@ -1164,14 +1604,18 @@ export class MermaidConverter {
         items.forEach((item, index) => {
             if (item.type === 'message') {
                 const msg = item;
-                const srcX = participantX.get(msg.source);
-                const tgtX = participantX.get(msg.target);
+                if (!msg.source || !msg.target) return; // Skip invalid messages
+                const msgSource = msg.source;
+                const msgTarget = msg.target;
 
-                if (srcX === undefined || tgtX === undefined) return; // Skip invalid messages
+                const srcX = participantX.get(msgSource);
+                const tgtX = participantX.get(msgTarget);
+
+                if (srcX === undefined || tgtX === undefined) return; // Skip if participants not found
 
                 // Create Sequence Points (Invisible or small dots)
-                const srcNodeId = `seq_${index}_src_${msg.source}`;
-                const tgtNodeId = `seq_${index}_tgt_${msg.target}`;
+                const srcNodeId = `seq_${index}_src_${msgSource}`;
+                const tgtNodeId = `seq_${index}_tgt_${msgTarget}`;
 
                 // Source Point
                 layoutNodes.push({
@@ -1205,30 +1649,32 @@ export class MermaidConverter {
                     target: tgtNodeId,
                     sourceHandle: isSelfLoop ? 'right-source' : (isLeftToRight ? 'right-source' : 'left-source'),
                     targetHandle: isSelfLoop ? 'right-target' : (isLeftToRight ? 'left-target' : 'right-target'),
-                    label: msg.label,
+                    label: msg.label || '',
                     type: isSelfLoop ? 'default' : 'smoothstep',
-                    animated: msg.arrow.includes('--'),
+                    animated: (msg.arrow || '').includes('--'),
                     style: {
-                        stroke: savedEdge?.style?.stroke || '#3b82f6',
-                        strokeWidth: savedEdge?.style?.strokeWidth || 2,
-                        strokeDasharray: savedEdge?.style?.strokeDasharray || (msg.arrow.includes('--') ? '5,5' : '0')
+                        stroke: (savedEdge?.style?.stroke as string) || '#3b82f6',
+                        strokeWidth: (savedEdge?.style?.strokeWidth as number) || 2,
+                        strokeDasharray: (savedEdge?.style?.strokeDasharray as string) || ((msg.arrow || '').includes('--') ? '5,5' : '0')
                     },
-                    labelStyle: savedEdge?.labelStyle,
-                    labelBgStyle: savedEdge?.labelBgStyle,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    labelStyle: savedEdge?.labelStyle as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    labelBgStyle: savedEdge?.labelBgStyle as any,
                     data: {
                         isSequenceMessage: true,
                         arrowType: msg.arrow,
                         order: index,
-                        sourceParticipant: msg.source,
-                        targetParticipant: msg.target
+                        sourceParticipant: msgSource,
+                        targetParticipant: msgTarget
                     },
-                    markerEnd: { type: MarkerType.ArrowClosed, color: savedEdge?.style?.stroke || '#3b82f6' }
+                    markerEnd: { type: MarkerType.ArrowClosed, color: (savedEdge?.style?.stroke as string) || '#3b82f6' }
                 });
 
                 // Vertical Lifeline Edges (From previous point to current)
-                const prevSrc = previousPoint.get(msg.source)!;
+                const prevSrc = previousPoint.get(msgSource)!;
                 layoutEdges.push({
-                    id: `life_${index}_src_${msg.source}`, // unique ID
+                    id: `life_${index}_src_${msgSource}`, // unique ID
                     source: prevSrc,
                     target: srcNodeId,
                     sourceHandle: 'bottom-source',
@@ -1239,10 +1685,10 @@ export class MermaidConverter {
                     data: { isLifeline: true }
                 });
 
-                const prevTgt = previousPoint.get(msg.target)!;
-                if (msg.source !== msg.target) {
+                const prevTgt = previousPoint.get(msgTarget)!;
+                if (msgSource !== msgTarget) {
                     layoutEdges.push({
-                        id: `life_${index}_tgt_${msg.target}`,
+                        id: `life_${index}_tgt_${msgTarget}`,
                         source: prevTgt,
                         target: tgtNodeId,
                         sourceHandle: 'bottom-source',
@@ -1257,8 +1703,8 @@ export class MermaidConverter {
                     // For now, ensuring handles is enough for connection
                 }
 
-                previousPoint.set(msg.source, srcNodeId);
-                previousPoint.set(msg.target, tgtNodeId);
+                previousPoint.set(msgSource, srcNodeId);
+                previousPoint.set(msgTarget, tgtNodeId);
 
                 currentY += STEP_Y;
             } else if (item.type === 'note') {
@@ -1267,7 +1713,7 @@ export class MermaidConverter {
                 let x = 0;
                 let width = 150;
 
-                if (note.position === 'over') {
+                if (note.position === 'over' && note.participants) {
                     if (note.participants.length > 1) {
                         // Span multiple
                         const minIndex = Math.min(...note.participants.map((p: string) => participants.get(p)?.index || 0));
@@ -1278,18 +1724,18 @@ export class MermaidConverter {
                         // Tighter fit: Center relative to lifelines
                         x = minX + 45;
                         width = (maxX - minX) + 90; // Covers from min+45 to max+135 (Lifelines are at +90)
-                    } else {
+                    } else if (note.participants.length > 0) {
                         // Over single - Center on participant
                         const pId = note.participants[0];
                         const pX = participantX.get(pId) || 0;
                         x = pX + 25; // Centered narrower
                         width = 130;
                     }
-                } else if (note.position === 'left of') {
+                } else if (note.position === 'left of' && note.participants && note.participants.length > 0) {
                     const pId = note.participants[0];
                     const pX = participantX.get(pId) || 0;
                     x = pX - 160; // Place directly to the left of the participant box
-                } else if (note.position === 'right of') {
+                } else if (note.position === 'right of' && note.participants && note.participants.length > 0) {
                     const pId = note.participants[0];
                     const pX = participantX.get(pId) || 0;
                     x = pX + 190; // Place directly to the right
@@ -1303,15 +1749,15 @@ export class MermaidConverter {
                     type: 'rectangle', // Use rectangle but styled as note
                     position: { x, y: currentY },
                     data: {
-                        label: note.label,
+                        label: note.label || '',
                         isSequenceNote: true,
-                        notePosition: note.position,
+                        notePosition: note.position as 'left of' | 'right of' | 'over' | undefined,
                         noteParticipants: note.participants,
                         order: index,
                         color: savedStyles[`note_${index}`]?.color || '#fef3c7',
                         textColor: savedStyles[`note_${index}`]?.textColor || '#000000',
                         strokeColor: savedStyles[`note_${index}`]?.strokeColor || '#d97706',
-                        strokeStyle: savedStyles[`note_${index}`]?.strokeStyle || 'solid'
+                        strokeStyle: (savedStyles[`note_${index}`]?.strokeStyle as 'solid' | 'dashed' | 'dotted') || 'solid'
                     },
                     style: {
                         width,
@@ -1371,8 +1817,8 @@ export class MermaidConverter {
             nodesep: 70,
             ranksep: 70,
             edgesep: 30,
-            marginx: 20,
-            marginy: 20
+            marginx: 40,
+            marginy: 40
         });
         g.setDefaultEdgeLabel(() => ({}));
 

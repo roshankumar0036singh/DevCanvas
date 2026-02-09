@@ -1,6 +1,13 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 
+// Type for marked parser context
+interface MarkedParser {
+    parser: {
+        parseInline(tokens: unknown[]): string;
+    };
+}
+
 // Configure marked with custom renderer
 marked.use({
     renderer: {
@@ -12,7 +19,7 @@ marked.use({
         },
         // Custom link renderer (open in new tab)
         // 'this' context implies Parser
-        link(this: any, { href, title, tokens }: { href: string; title?: string | null; tokens: any[] }) {
+        link(this: MarkedParser, { href, title, tokens }: { href: string; title?: string | null; tokens: unknown[] }) {
             const text = this.parser.parseInline(tokens);
             const titleAttr = title ? ` title="${title}"` : '';
             return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;

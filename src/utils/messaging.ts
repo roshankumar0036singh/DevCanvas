@@ -28,20 +28,20 @@ export enum MessageType {
     UPDATE_SETTINGS = 'UPDATE_SETTINGS',
 }
 
-export interface Message<T = any> {
+export interface Message<T = unknown> {
     type: MessageType;
     data?: T;
     target?: 'content-script' | 'background' | 'popup';
 }
 
-export interface MessageResponse<T = any> {
+export interface MessageResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
 }
 
 // Helper function to send messages
-export async function sendMessage<T = any, R = any>(
+export async function sendMessage<T = unknown, R = unknown>(
     message: Message<T>
 ): Promise<MessageResponse<R>> {
     return new Promise((resolve) => {
@@ -59,7 +59,7 @@ export async function sendMessage<T = any, R = any>(
 }
 
 // Helper to send message to specific tab
-export async function sendMessageToTab<T = any, R = any>(
+export async function sendMessageToTab<T = unknown, R = unknown>(
     tabId: number,
     message: Message<T>
 ): Promise<MessageResponse<R>> {

@@ -12,7 +12,10 @@ import {
     Box,
     Wind,
     Sparkles,
-    Globe
+    Globe,
+    Eye,
+    EyeOff,
+    ExternalLink
 } from 'lucide-react';
 import type { Settings as SettingsType } from '../../utils/storage';
 
@@ -34,6 +37,8 @@ type Tab = 'general' | 'ai' | 'danger';
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     const [activeTab, setActiveTab] = useState<Tab>('general');
     const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+
+    const [showToken, setShowToken] = useState(false);
 
     const handleApiKeyChange = (provider: keyof SettingsType['apiKeys'], key: string) => {
         const newApiKeys = { ...settings.apiKeys, [provider]: key };
@@ -58,6 +63,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 >
                     <Cpu size={14} /> AI Models
                 </button>
+
                 <button
                     className={`nav-tab flex-1 justify-center ${activeTab === 'danger' ? 'active' : ''}`}
                     onClick={() => setActiveTab('danger')}
@@ -92,7 +98,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                             <h3>Diagrams</h3>
                         </div>
                         <div className="setting-row">
-                            <label htmlFor="defaultDiagramType">Type</label>
+                            <label htmlFor="defaultDiagramType">Default Type</label>
                             <select
                                 id="defaultDiagramType"
                                 value={settings.defaultDiagramType}
@@ -119,6 +125,58 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                                 checked={settings.autoSync}
                                 onChange={(e) => onUpdate({ autoSync: e.target.checked })}
                             />
+                        </div>
+                    </div>
+
+                    <div className="github-integration-card">
+                        <div className="github-header-row">
+                            <div className="github-title-block">
+                                <div className="github-title">
+                                    <Globe size={16} />
+                                    GitHub API
+                                </div>
+                                <div className="github-desc">
+                                    Access private repos & increase limits (5k/hr)
+                                </div>
+                            </div>
+                            {settings.githubToken && (
+                                <div className="github-status-badge" title="Token Saved">
+                                    <Check size={14} />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="input-with-icon-wrapper">
+                            <div className="input-with-icon">
+                                <Key size={14} className="input-icon" />
+                                <input
+                                    id="githubToken"
+                                    type={showToken ? "text" : "password"}
+                                    value={settings.githubToken || ''}
+                                    onChange={(e) => onUpdate({ githubToken: e.target.value })}
+                                    placeholder="ghp_..."
+                                    spellCheck={false}
+                                />
+                                <button
+                                    className="toggle-visibility-btn"
+                                    onClick={() => setShowToken(!showToken)}
+                                    title={showToken ? "Hide Token" : "Show Token"}
+                                    type="button"
+                                >
+                                    {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="github-actions-row">
+                            <a
+                                href="https://github.com/settings/tokens/new?scopes=repo"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="link-generate-token"
+                            >
+                                Generate Token <ExternalLink size={10} />
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -190,6 +248,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     </div>
                 </div>
             )}
+
+
 
             {activeTab === 'danger' && (
                 <div className="settings-group danger animate-fade-in">

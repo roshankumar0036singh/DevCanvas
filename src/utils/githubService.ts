@@ -23,7 +23,7 @@ export class GitHubService {
         return headers;
     }
 
-    async fetchRepoTree(owner: string, repo: string, branch: string): Promise<any[]> {
+    async fetchRepoTree(owner: string, repo: string, branch: string): Promise<GitHubTreeItem[]> {
         const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
         const response = await fetch(url, { headers: this.getHeaders() });
 
@@ -62,4 +62,13 @@ export class GitHubService {
     // Fallback using raw.githubusercontent.com (for public repos if API fails?) 
     // Actually API is better for private. But raw domain works for tokens too? 
     // Stick to API for consistency.
+}
+
+export interface GitHubTreeItem {
+    path: string;
+    mode: string;
+    type: 'blob' | 'tree';
+    sha: string;
+    size?: number;
+    url: string;
 }

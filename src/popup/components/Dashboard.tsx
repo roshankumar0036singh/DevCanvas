@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import AIProcessingOverlay from './AIProcessingOverlay';
 import storage from '../../utils/storage';
-import { MessageType, sendMessage } from '../../utils/messaging';
+import { MessageType, sendMessage, Message } from '../../utils/messaging';
 import type { Settings, Diagram, Document } from '../../utils/storage';
 
 interface DashboardProps {
@@ -32,6 +32,8 @@ interface ContentScriptResponse {
         structure?: RepoStructureItem[];
         diagram?: string;
         extraContext?: string;
+        readme?: string;
+        repoName?: string;
     };
     error?: string;
 }
@@ -113,7 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
             if (type === 'flowchart' || type === 'health') {
                 // Use ANALYZE_REPO to get structure, then AI to generate
 
-                const response: any = await sendMessageToTab(tab.id, {
+                const response: ContentScriptResponse = await sendMessageToTab(tab.id, {
                     type: MessageType.ANALYZE_REPO,
                 });
 
@@ -129,13 +131,13 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     // setShowAnalysisMenu(false); // Already closed
                     // If we have AI prompt, use AI service
                     // Handle legacy string return (old content script) vs new object return
-                    let content = typeof response.data === 'string' ? response.data : response.data.diagram;
+                    let content = (typeof response.data === 'string' ? response.data : response.data.diagram) || '';
 
-                    if (repoAnalysisMode && response.data.structure) {
+                    if (repoAnalysisMode && typeof response.data !== 'string' && response.data.structure) {
                         try {
                             // Dynamic import to avoid circular dep or heavy load
                             const aiService = await import('../../utils/aiService');
-                            const structureStr = response.data.structure.map((s: any) => `${s.type === 'dir' ? '/' : ''}${s.name}`).join('\n');
+                            const structureStr = response.data.structure.map((s: RepoStructureItem) => `${s.type === 'dir' ? '/' : ''}${s.name}`).join('\n');
 
                             // Show premium loading state
                             setAiMessage(type === 'health' ? 'Generating Health Heatmap...' : 'Architecting Repository Map...');
@@ -148,7 +150,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                                 settings,
                                 repoSettings.diagramType,
                                 repoSettings.prompt,
-                                response.data.extraContext,
+                                typeof response.data !== 'string' ? response.data.extraContext : undefined,
                                 type === 'health' // isHealthMap
                             );
                             setAiProcessing(false);
@@ -159,9 +161,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                                 console.warn('AI returned empty diagram, falling back to default structure');
                                 alert('AI could not generate a valid diagram. Showing default file structure.');
                             }
-                        } catch (aiErr: any) {
+                        } catch (aiErr: unknown) {
                             console.error('AI Gen failed, using default', aiErr);
-                            alert(`AI Analysis failed: ${aiErr.message || 'Unknown error'}`);
+                            const errorMessage = aiErr instanceof Error ? aiErr.message : 'Unknown error';
+                            alert(`AI Analysis failed: ${errorMessage}`);
                             // Fallback to default
                         }
                     }
@@ -242,9 +245,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                         } else {
                             alert('AI could not identify any issues for this repository.');
                         }
-                    } catch (aiErr: any) {
+                    } catch (aiErr: unknown) {
                         console.error('Issue analysis failed', aiErr);
-                        alert(`Issue Analysis failed: ${aiErr.message || 'Unknown error'}`);
+                        const errorMessage = aiErr instanceof Error ? aiErr.message : 'Unknown error';
+                        alert(`Issue Analysis failed: ${errorMessage}`);
                     } finally {
                         setAiProcessing(false);
                     }
@@ -258,7 +262,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     type: MessageType.ANALYZE_README,
                 });
 
-                if (response.success && response.data?.readme) {
+                if (response.success && typeof response.data !== 'string' && response.data?.readme) {
                     const doc = await storage.addDocument({
                         title: `README: ${response.data.repoName || 'Unknown'}`,
                         content: response.data.readme,
@@ -280,7 +284,6 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     setAiProcessing(false);
                 }
             } else if (type === 'review') {
-            } else if (type === 'review') {
                 // setShowAnalysisMenu(false);
                 setAiMessage('Genie is reviewing the PR...');
                 // setAiProcessing(true);
@@ -295,7 +298,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     try {
                         const aiService = await import('../../utils/aiService');
                         const reviewContent = await aiService.reviewPullRequest(
-                            response.data,
+                            response.data as string,
                             settings
                         );
                         setAiProcessing(false);
@@ -314,9 +317,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                             await loadData();
                             onOpenDocument(doc.id);
                         }
-                    } catch (aiErr: any) {
+                    } catch (aiErr: unknown) {
                         console.error('PR Review failed', aiErr);
-                        alert(`PR Review failed: ${aiErr.message || 'Unknown error'}`);
+                        const errorMessage = aiErr instanceof Error ? aiErr.message : 'Unknown error';
+                        alert(`PR Review failed: ${errorMessage}`);
                         setAiProcessing(false);
                     }
                 } else {
@@ -324,15 +328,16 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                     alert(response.error || 'Could not fetch PR diff. Make sure you are on a GitHub PR page.');
                 }
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Analysis failed', err);
             setAiProcessing(false);
-            alert(`Analysis error: ${err.message}`);
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            alert(`Analysis error: ${errorMessage}`);
         }
     };
 
-    const sendMessageToTab = async (tabId: number, msg: any) => {
-        return new Promise<any>((resolve) => {
+    const sendMessageToTab = async (tabId: number, msg: Message<unknown>): Promise<ContentScriptResponse> => {
+        return new Promise<ContentScriptResponse>((resolve) => {
             const messageWithTarget = { ...msg, target: 'content-script' };
             console.log('DevCanvas: Sending message to tab:', tabId, msg.type);
 
@@ -346,9 +351,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, onOpenDiagram, onOpenDo
                         resolve(response || { success: false, error: 'No response from content script' });
                     }
                 });
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('DevCanvas: Critical messaging error:', err);
-                resolve({ success: false, error: err.message });
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                resolve({ success: false, error: errorMessage });
             }
         });
     };

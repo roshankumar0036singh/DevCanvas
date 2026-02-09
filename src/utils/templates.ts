@@ -450,53 +450,12 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
   Head[Head] --> Node1
   subgraph List
     direction LR
-    Node1[Data: 10 | Next] --> Node2[Data: 20 | Next]
-    Node2 --> Node3[Data: 30 | Next]
+    Node1["Data: 10, Next"] --> Node2["Data: 20, Next"]
+    Node2 --> Node3["Data: 30, Next"]
     Node3 --> Null[Null]
   end`
     },
-    // Project Management
-    {
-        id: 'gantt-chart',
-        category: 'General',
-        name: 'Project Gantt Chart',
-        description: 'Project timeline and milestones.',
-        type: 'mermaid',
-        code: `gantt
-    title Project Timeline
-    dateFormat  YYYY-MM-DD
-    section Design
-    Research           :done,    des1, 2024-01-01, 7d
-    Prototyping        :active,  des2, 2024-01-08, 5d
-    section Dev
-    Backend Impl       :         dev1, 2024-01-15, 10d
-    Frontend Impl      :         dev2, after dev1, 7d
-    section Test
-    QA                 :         test1, after dev2, 5d`
-    },
-    {
-        id: 'git-graph',
-        category: 'General',
-        name: 'Git Branching Strategy',
-        description: 'Visualization of git commits and branches.',
-        type: 'mermaid',
-        code: `gitGraph
-commit
-commit
-    branch develop
-    checkout develop
-commit
-commit
-    branch feature / auth
-    checkout feature / auth
-commit
-commit
-    checkout develop
-    merge feature / auth
-    checkout main
-    merge develop
-    commit tag: "v1.0"`
-    },
+
     {
         id: 'mind-map',
         category: 'General',
@@ -504,19 +463,19 @@ commit
         description: 'Hierarchical mind map for ideas.',
         type: 'mermaid',
         code: `mindmap
-root((DevCanvas))
-Features
-Visualizations
-Flowcharts
+  root((DevCanvas))
+    Features
+      Visualizations
+        Flowcharts
         Sequence Diagrams
       AI Analysis
         Code Audits
         Bug Detection
     Tech Stack
-React
-TypeScript
-Mermaid
-OpenAI`
+      React
+      TypeScript
+      Mermaid
+      OpenAI`
     },
     {
         id: 'state-diagram',
@@ -524,13 +483,13 @@ OpenAI`
         name: 'Login State Machine',
         description: 'State transitions for user authentication.',
         type: 'mermaid',
-        code: `stateDiagram - v2
-[*]-- > Idle
-Idle-- > Authenticating: Click Login
-Authenticating-- > Authenticated: Success
-Authenticating-- > Error: Failure
-Error-- > Idle: Retry
-Authenticated-- > [*]: Logout`
+        code: `stateDiagram-v2
+[*] --> Idle
+Idle --> Authenticating: Click Login
+Authenticating --> Authenticated: Success
+Authenticating --> Error: Failure
+Error --> Idle: Retry
+Authenticated --> [*]: Logout`
     },
     {
         id: 'pie-chart',

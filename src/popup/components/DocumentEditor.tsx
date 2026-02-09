@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     ArrowLeft, Save, Eye, Code,
     Heading1, Heading2, Heading3,
@@ -35,22 +35,7 @@ const DocumentEditor: React.FC<DocumentEditorProps> = ({ documentId, onBack }) =
     const [aiInstruction, setAiInstruction] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
 
-    useEffect(() => {
-        loadDocument();
-    }, [documentId]);
-
-    // Auto-save every 2 seconds
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (document && (content !== document.content || title !== document.title)) {
-                handleSave();
-            }
-        }, 2000);
-
-        return () => clearTimeout(timer);
-    }, [content, title]);
-
-    const loadDocument = async () => {
+    const loadDocument = useCallback(async () => {
         setLoading(true);
         if (documentId) {
             const docs = await storage.getDocuments();
@@ -72,9 +57,9 @@ const DocumentEditor: React.FC<DocumentEditorProps> = ({ documentId, onBack }) =
             setTitle(newDoc.title);
         }
         setLoading(false);
-    };
+    }, [documentId]);
 
-    const handleSave = async () => {
+    const handleSave = useCallback(async () => {
         if (!document) return;
 
         setSaving(true);
@@ -84,7 +69,22 @@ const DocumentEditor: React.FC<DocumentEditorProps> = ({ documentId, onBack }) =
             updatedAt: Date.now(),
         });
         setSaving(false);
-    };
+    }, [document, title, content]);
+
+    useEffect(() => {
+        loadDocument();
+    }, [loadDocument]);
+
+    // Auto-save every 2 seconds
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (document && (content !== document.content || title !== document.title)) {
+                handleSave();
+            }
+        }, 2000);
+
+        return () => clearTimeout(timer);
+    }, [content, title, document, handleSave]);
 
     const handleTemplateSelect = (templateContent: string) => {
         if (content.length > 50) {
@@ -170,8 +170,9 @@ ${parseMarkdown(content)}
             setContent(updatedContent);
             setShowAI(false);
             setAiInstruction('');
-        } catch (error: any) {
-            alert('AI Error: ' + error.message);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            alert('AI Error: ' + errorMessage);
         } finally {
             setAiLoading(false);
         }
