@@ -29,7 +29,7 @@ export interface Diagram {
         viewPath?: string;
         repoStructure?: string;
         extraContext?: string;
-        [key: string]: any;
+        [key: string]: unknown;
     };
 }
 
