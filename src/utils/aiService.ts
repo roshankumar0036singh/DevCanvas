@@ -278,11 +278,28 @@ export async function visualizeRepository(
 
     let taskDescription = `Your goal is to create a high-level ${diagramType} diagram that represents the ARCHITECTURE and LOGICAL FLOW of the repository.`;
     let healthInstructions = '';
-    let sequenceInstructions = '';
+    let typeSpecificInstructions = '';
 
     if (isHealthMap) {
         taskDescription = `Your goal is to create a **HEALTH HEATMAP** of the repository using a ${diagramType}.`;
-        healthInstructions = `
+
+        if (diagramType === 'mindmap') {
+            healthInstructions = `
+CRITICAL: HEALTH MINDMAP INSTRUCTIONS
+1. ANALYZE ACTUAL CODE for risks.
+2. INDENTATION IS CRITICAL: Indent children by 2 spaces.
+3. COLOR-CODE Nodes using Mermaid classes:
+   - \`:::health-critical\` (Red)
+   - \`:::health-warning\` (Orange)
+   - \`:::health-healthy\` (Green)
+4. SYNTAX:
+   mindmap
+     root((RepoName)):::health-healthy
+       folder1:::health-warning
+         file1:::health-critical
+5. DO NOT use 'class node health-critical'. Append \`:::\` directly to the node label.`;
+        } else {
+            healthInstructions = `
 CRITICAL: HEALTH MAP INSTRUCTIONS
 1. ANALYZE ACTUAL CODE: Check dependencies, configurations, and README. Do NOT guess health based on folder names.
 2. CONFIDENCE SCORE: Only color-code nodes where you have >90% confidence of an issue or optimization. 
@@ -295,10 +312,18 @@ CRITICAL: HEALTH MAP INSTRUCTIONS
 6. Apply classes using: \`class node_id health-critical\`
 7. NO SEQUENCE DIAGRAM TOKENS: Do NOT use 'note right of', 'participant', or 'loop'.
 8. LEGEND (Optional): If you add a legend, it MUST be inside a \`subgraph Legend_Sub [Legend]\` block at the bottom. Never add orphaned status nodes.
-9. NO SEQUENCE ARROWS: Do NOT use '->>', '->', or '-.->>'. Use ONLY standard flowchart arrows: '-->', '-.->', '==>'.`;
-    } else if (diagramType === 'sequenceDiagram') {
+9. NO SEQUENCE ARROWS: Do NOT use '->>', '->', or '-.->>'. Use ONLY standard flowchart arrows: '-->', '-.->', '==>'.
+10. SUBGRAPH SYNTAX: improper subgraph syntax causes crashes.
+    - CORRECT: \`subgraph Main [Main Component]\`
+    - WRONG: \`subgraph Main[]\` (Empty brackets crash the parser)
+    - WRONG: \`subgraph Main\` (Missing label is risky)
+    - RULE: Always provide a label in brackets, and ensure it is NOT empty.`;
+        }
+    }
+
+    if (diagramType === 'sequenceDiagram') {
         taskDescription = `Your goal is to create a **LOGIC FLOW SEQUENCE** of the repository using a sequenceDiagram.`;
-        sequenceInstructions = `
+        typeSpecificInstructions = `
 CRITICAL: SEQUENCE DIAGRAM RULES
 1. ONLY declare 'participant' if it is actively involved in at least one message exchange (A -> B).
 2. DO NOT declare a participant at the top just because it exists in the repo.
@@ -306,6 +331,99 @@ CRITICAL: SEQUENCE DIAGRAM RULES
 4. Group related files into single logical participants (e.g., 'API Layer', 'Storage', 'UI Components') to avoid clutter.
 5. Use clear aliases: \`participant P1 as "API Layer"\`.
 6. DO NOT use square brackets [] for labels in sequence diagrams. Use "Quotes".`;
+    } else if (diagramType === 'mindmap') {
+        typeSpecificInstructions = `
+CRITICAL: MINDMAP RULES
+1. ROOT NODE: Start with 'mindmap' followed by a SINGLE root node on the next line. e.g. 'root((ProjectName))'.
+2. INDENTATION: Every child MUST be indented by 2 or 4 spaces relative to its parent. Strict indentation is required.
+3. NO ORPHANS: All nodes must be children of the root or other nodes.
+4. SYNTAX:
+   mindmap
+     root((Project))
+       FeatureA
+         SubTask1
+       FeatureB
+5. ICONS: Optional ::icon(fa fa-book).`;
+    } else if (diagramType === 'gantt') {
+        typeSpecificInstructions = `
+CRITICAL: GANTT CHART RULES
+1. DATES: Use 'YYYY-MM-DD' format.
+2. SECTIONS: Use 'section' keyword to group tasks.
+3. SYNTAX:
+   gantt
+     title Project Timeline
+     dateFormat YYYY-MM-DD
+     section Phase 1
+     Task 1 :done, t1, 2024-01-01, 30d
+     Task 2 :active, t2, after t1, 20d
+4. IDs: Task IDs (t1, t2) are optional but recommended for dependencies.`;
+    } else if (diagramType === 'gitGraph') {
+        typeSpecificInstructions = `
+CRITICAL: GIT GRAPH RULES
+1. START: Start with 'gitGraph'.
+2. COMMANDS: Use 'commit', 'branch', 'checkout', 'merge'.
+3. SYNTAX:
+   gitGraph
+     commit
+     branch develop
+     checkout develop
+     commit
+     checkout main
+     merge develop
+4. IDS: You can add ids to commits: 'commit id: "v1.0"'.`;
+    } else if (diagramType === 'classDiagram') {
+        typeSpecificInstructions = `
+CRITICAL: CLASS DIAGRAM RULES
+1. CLASSES: Define classes using 'class Name'.
+2. MEMBERS: Add methods/properties with visibility (+, -, #).
+3. RELATIONSHIPS: <|-- (Inheritance), *-- (Composition), o-- (Aggregation), --> (Association).
+4. SYNTAX:
+   classDiagram
+     class Animal {
+       +String name
+       +eat()
+     }
+     class Duck
+     Animal <|-- Duck`;
+    } else if (diagramType === 'stateDiagram' || diagramType === 'stateDiagram-v2') {
+        typeSpecificInstructions = `
+CRITICAL: STATE DIAGRAM RULES
+1. USE 'stateDiagram-v2'.
+2. STATES: Use simple IDs or 'state "Description" as ID'.
+3. TRANSITIONS: [*] is start/end. Use --> for transitions.
+4. SYNTAX:
+   stateDiagram-v2
+     [*] --> Idle
+     Idle --> Working : Event
+     Working --> [*]`;
+    } else if (diagramType === 'erDiagram') {
+        typeSpecificInstructions = `
+CRITICAL: ER DIAGRAM RULES
+1. ENTITIES: Define entities like 'Customer { string name }'.
+2. RELATIONSHIPS: ||--o{ (One-to-Many), }|..|{ (Many-to-Many), etc.
+3. ATTRIBUTES: Add type and name. PK/FK keys.
+4. SYNTAX:
+   erDiagram
+     User ||--o{ Order : places
+     User { string name }
+     Order { int id }`;
+    } else if (diagramType === 'pie') {
+        typeSpecificInstructions = `
+CRITICAL: PIE CHART RULES
+1. DATA: "Label" : Value.
+2. TITLE: 'pie title My Chart'.
+3. SYNTAX:
+   pie title Distributions
+     "A" : 40
+     "B" : 60`;
+    } else {
+        // Default Flowchart / Graph
+        typeSpecificInstructions = `
+CRITICAL: FLOWCHART RULES
+1. DIRECTION: Use 'graph TD' (Top-Down) or 'graph LR' (Left-Right).
+2. NODES: Use descriptive IDs and Labels.
+3. SHAPES: [] (box), () (round), {} (diamond).
+4. ARROWS: --> (solid), -.-> (dotted), ==> (thick).`;
     }
 
     const prompt = `You are a Senior Software Architect. ${taskDescription}
@@ -315,15 +433,16 @@ ${truncatedStructure}
 ${additionalContext}
 ${customInstruction}
 ${healthInstructions}
-${sequenceInstructions}
+${typeSpecificInstructions}
 
 GOAL: Map the files and folders to logical components or services.
 
 CRITICAL RULES:
 3. USE Semantic Labels: Use human-readable names like "Auth Service" instead of filenames.
-4. INFER from context: Include external services like 'Firebase', 'AWS', or 'Stripe' if mentioned.
-5. CRITICAL: Sanitize ALL Node/Class IDs. Use ONLY Alphanumeric + Underscore. DO NOT use array syntax like 'Type[]'.
-   - Use Labels for display: \`node_id["Logical Name"]\` (CRITICAL: No space before '[').
+4. NO HALLUCINATIONS: ONLY include external services (Firebase, AWS, Stripe, etc.) if they are EXPLICITLY imported or configured in the source code or package.json. DO NOT guess based on comments or common stacks.
+5. CRITICAL: Sanitize ALL Node/Class IDs. Use ONLY Alphanumeric + Underscore. DO NOT use array syntax like 'Type[]' or 'Scripts[]'.
+6. CRITICAL: SUBGRAPHS must use simple IDs. Example: \`subgraph Utils\` NOT \`subgraph Utils[]\`.
+   - Use Labels for display: \\\`node_id["Logical Name"]\\\` (CRITICAL: No space before '[').
    - ALWAYS wrap labels in double quotes "", especially if they contain special characters like | (pipes), brackets, or colons.
    - ALWAYS close all brackets and quotes.
 
@@ -535,21 +654,76 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
         const beforeDiagram = cleaned.substring(0, startIndex).trim();
         let fromDiagram = cleaned.substring(startIndex).trim();
 
-        // Fix common Mermaid syntax errors
-        // 1. Ensure NO space between node ID and brackets: node_id ["Label"] -> node_id["Label"]
-        // This fixes the "got SQS" (Square Bracket Start) parse error.
+        // ---------------------------------------------------------
+        // AGGRESSIVE SANITIZATION START
+        // ---------------------------------------------------------
+
+        // 1. Force Newlines:
+        // Ensure 'graph TD' (and variants) is followed by a newline
+        fromDiagram = fromDiagram.replace(/^(graph\s+[A-Z]{2})\s+/i, '$1\n');
+        fromDiagram = fromDiagram.replace(/^(flowchart\s+[A-Z]{2})\s+/i, '$1\n');
+
+        // Ensure 'subgraph ID' is on its own line if it's crowded
+        // Example: "subgraph Foo node1" -> "subgraph Foo\nnode1"
+        // But be careful about "subgraph Foo [Label]"
+        // Strategy: If we see "subgraph ID " followed by alphanumeric, break it.
+        fromDiagram = fromDiagram.replace(/^(subgraph\s+[A-Za-z0-9_.-]+)\s+([A-Za-z0-9_]+\[)/gm, '$1\n$2');
+
+        // 2. Global [] Removal from IDs/Subgraphs:
+        // First, handle quoted labels to protect valid "[]" in text
+        // We will temporarily tokenize quoted strings if needed, but for now, 
+        // let's just assume we want to kill "[]" empty brackets specifically.
+
+        // Replaces "Name[]", "Name [ ]", "Name  [   ]" with "Name_Array" anywhere in the text
+        // This is the "Nuclear Option" for the user's specific error.
+        fromDiagram = fromDiagram.replace(/\[\s*\]/g, '_Array');
+
+        // Extra safety: If we still have "subgraph Name[]" pattern that was missed (unlikely but possible if mixed with other chars)
+        // Explicitly target subgraph lines
+        fromDiagram = fromDiagram.replace(/^subgraph\s+([^\s[]+)\[\s*\]/gm, 'subgraph $1_Array');
+
+        // ---------------------------------------------------------
+        // STANDARD FIXES
+        // ---------------------------------------------------------
+
+        // Ensure NO space between node ID and brackets: node_id ["Label"] -> node_id["Label"]
         fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\s+(\[|{|\(|\(\(|\{\{|\[\()/g, '$1$2');
 
-        // Sanitize Node IDs: Remove [] from potential IDs (if they appear before arrows or open brackets)
-        // Fixes: DevCanvas_Repository[] --> ...
-        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\]/g, '$1_Array');
+        // Fix: subgraph Scripts_Array -> subgraph Scripts_Array (already handled by nuclear option above)
+        // But let's keep the explicit ones just in case nuclear wasn't enough (it should be)
 
         fromDiagram = fromDiagram.replace(/\|>/g, '-->');
         fromDiagram = fromDiagram.replace(/<\|/g, '<--');
 
+
+        // Fix invalid arrow syntax: -->|label|--> should be -->|label|
+        // Pattern 1: -->|text|--> (Double arrow with pipes)
+        fromDiagram = fromDiagram.replace(/(--?>)\|([^|]+)\|(--?>)/g, '$1|$2|');
+        fromDiagram = fromDiagram.replace(/(-\.->)\|([^|]+)\|(--?>)/g, '$1|$2|');
+        fromDiagram = fromDiagram.replace(/(==?>)\|([^|]+)\|(==?>)/g, '$1|$2|');
+
+        // Pattern 2: -->|text--> (Missing closing pipe, followed by arrow)
+        fromDiagram = fromDiagram.replace(/(--?>)\|([^|]+?)(--?>)/g, '$1|$2|');
+        fromDiagram = fromDiagram.replace(/(-\.->)\|([^|]+?)(-\.->|--?>)/g, '$1|$2|');
+
+        // Pattern 3: --> text| (Missing OPENING pipe)
+        // Matches: arrow + spaces + text + pipe
+        // Replace with: arrow|text|
+        fromDiagram = fromDiagram.replace(/(--?>)\s+([^|]+)\|/g, '$1|$2|');
+        fromDiagram = fromDiagram.replace(/(-\.->)\s+([^|]+)\|/g, '$1|$2|');
+        fromDiagram = fromDiagram.replace(/(==?>)\s+([^|]+)\|/g, '$1|$2|');
+
+        // Pattern 4: -->| (Trailing arrow with open pipe at end of line or before node)
+        // If followed by space or newline, remove pipe to make it a simple arrow
+        // MUST NOT match if pipe is followed by text and another pipe (valid label)
+        fromDiagram = fromDiagram.replace(/(--?>|--\.|==>)\|\s*(?![^|]*\|)([A-Za-z0-9_\["]|$)/g, '$1 $2');
+
+        // ---------------------------------------------------------
+        // SANITIZATION END
+        // ---------------------------------------------------------
+
         // Balancer: Ensure all brackets and quotes are closed on each line
-        const lines = fromDiagram.split('\n');
-        const balancedLines = lines.map(line => {
+        const balancedLines = fromDiagram.split('\n').map(line => {
             let processed = line;
             // Balance quotes (basic)
             const quoteCount = (processed.match(/"/g) || []).length;
@@ -579,12 +753,18 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
             }).join('\n');
         } else {
             fromDiagram = balancedLines.join('\n');
-        }
 
-        // Force-strip Sequence Diagram 'note' tokens if in flowchart/graph mode
-        if (foundKeyword.startsWith('graph') || foundKeyword.startsWith('flowchart')) {
+            // Force-strip Sequence Diagram 'note' tokens if in flowchart/graph mode
             if (foundKeyword.startsWith('graph') || foundKeyword.startsWith('flowchart')) {
+                // Remove 'note right of', etc.
                 fromDiagram = fromDiagram.replace(/^\s*note\s+(?:right of|left of|over)\s+.+$/gm, '');
+
+                // Fix: Replace Sequence Diagram arrows with Flowchart arrows
+                // AI often uses ->> or -.->> in flowcharts by mistake.
+                fromDiagram = fromDiagram.replace(/-\.->>/g, '-.->'); // Dotted arrow
+                fromDiagram = fromDiagram.replace(/->>/g, '-->');     // Solid arrow
+                fromDiagram = fromDiagram.replace(/--\)/g, '-->');    // Weird arrow
+                fromDiagram = fromDiagram.replace(/-\)/g, '-->');     // Weird arrow
 
                 // Aggressive Cleanup: Remove conversational lines that might have appeared
                 // Example: "This Mermaid code represents..."
@@ -829,7 +1009,9 @@ UPDATED TEXT:`;
  */
 export async function visualizeLogicFlow(
     functionCode: string,
-    settings: Settings
+    settings: Settings,
+    fileStructure?: string,
+    extraContext?: string
 ): Promise<string> {
     const provider = settings.aiProvider || 'openai';
     const apiKey = settings.apiKeys?.[provider] || settings.apiKey;
@@ -838,13 +1020,16 @@ export async function visualizeLogicFlow(
         throw new Error(`API key for ${provider} not configured.`);
     }
 
+    const structureContext = fileStructure ? `\n\nREPO STRUCTURE CONTEXT:\n${fileStructure}` : '';
+    const additionalContext = extraContext ? `\n\nADDITIONAL CONTEXT:\n${extraContext}` : '';
+
     const prompt = `You are a Senior Software Engineer specializing in Logic Visualization.
 Your task is to analyze the following code snippet (a function or block of logic) and generate a DETAILED Mermaid 'graph TD' flowchart.
 
 CODE SNIPPET:
 \`\`\`
 ${functionCode}
-\`\`\`
+\`\`\`${structureContext}${additionalContext}
 
 GOAL: Map the internal logic paths.
 
