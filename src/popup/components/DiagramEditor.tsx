@@ -325,11 +325,15 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 }
             }
 
+            // CRITICAL: Use the full node path (id) for context filtering, not just the label
+            const filterPath = (root && buildStructureMap(root).get(folderName)?.id) || folderName;
+            const filteredContext = filterContextByFolder(diagramMetadata.extraContext as string, filterPath);
+
             const aiContent = await aiService.analyzeFolderIssues(
                 folderName,
                 structureToAnalyze,
                 await storage.getSettings(),
-                diagramMetadata.extraContext as string | undefined
+                filteredContext
             );
 
             setAiProcessing(false);
@@ -356,6 +360,65 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
         setShowAIModal(true);
     };
 
+    // Drag & Drop handler for AI prompt to support @folder scoping via GitHub links
+    const handleDropOnAI = (e: React.DragEvent) => {
+        e.preventDefault();
+        const url = e.dataTransfer.getData('text/plain');
+        if (url && url.includes('github.com')) {
+            try {
+                const urlObj = new URL(url);
+                const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                // URL: /user/repo/tree/branch/path/to/folder or /user/repo/blob/branch/path/to/file
+                if (pathParts.length >= 5 && (pathParts[2] === 'tree' || pathParts[2] === 'blob')) {
+                    const relativePath = pathParts.slice(4).join('/');
+                    if (relativePath) {
+                        setAiInstruction(prev => {
+                            const trimmed = prev.trim();
+                            return trimmed ? `${trimmed} @${relativePath}` : `@${relativePath}`;
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to parse dropped URL:', err);
+            }
+        }
+    };
+
+    // Helper to filter global context by folder to prevent noise in scoped audits
+    const filterContextByFolder = (context: string, targetFolderPath: string) => {
+        if (!context) return undefined;
+
+        // Normalize target path (remove leading/trailing slashes)
+        const targetDir = targetFolderPath.replace(/^\/+|\/+$/g, '');
+
+        const blocks = context.split('\n--- CONTENT OF ');
+        const filteredBlocks = blocks.filter(block => {
+            if (!block.trim()) return false;
+
+            // Extract the path from (path/to/file)
+            // Format match: TAG (path/to/file)
+            const pathMatch = block.match(/\(([^)]+)\)/);
+            if (!pathMatch) return false;
+
+            const filePath = pathMatch[1].replace(/^\/+|\/+$/g, '');
+
+            // 1. Keep explicit root config files for high-level context
+            const isImportantRootFile = ['package.json', 'go.mod', 'requirements.txt', 'README.md', 'tsconfig.json'].includes(filePath);
+            if (isImportantRootFile) return true;
+
+            // 2. Check if file is strictly inside the target folder
+            // e.g. targetDir="src/utils" matches "src/utils/api.ts"
+            const isInFolder = filePath === targetDir || filePath.startsWith(targetDir + '/');
+            return isInFolder;
+        });
+
+        console.log(`DevCanvas Scoping: Filtered ${blocks.length} context blocks down to ${filteredBlocks.length} relative to "${targetDir}"`);
+
+        if (filteredBlocks.length === 0) return undefined;
+        // Reconstruct with original prefix and proper joining
+        return filteredBlocks.map(b => (b.trim().startsWith('---') ? b : '--- CONTENT OF ' + b)).join('\n');
+    };
+
     const executeEnhancement = async () => {
         try {
             setSaving(true); // Show loading state on button
@@ -380,10 +443,13 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             if (aiMode === 'logic-flow') {
                 enhancedCode = await aiService.visualizeLogicFlow(aiInstruction, settings);
             } else {
-                // 1. Check for Manual Audit/Diagram Scoping Commands (Only in 'instruction' mode)
+                // 1. Check for Manual Audit/Diagram Scoping Commands OR @folder Mentions
                 let scopedStructureMatch: { type: 'audit' | 'diagram', folder: string } | null = null;
 
                 if (aiMode === 'instruction') {
+                    // Detect @folder mentions anywhere in the prompt
+                    const mentionMatch = aiInstruction.match(/@(["']?([^"'\s]+)["']?)/);
+
                     // Improved Regex to handle trailing spaces/text and ensure robust capture
                     const auditRegex = /^(?:audit|analyze|check)\s+(?:folder|component|path)?\s*["']?([^"']+)["']?/i;
                     // Diagram regex now skips potential qualifiers like "health of" or "flow of" when capturing the folder name
@@ -392,8 +458,18 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                     const auditMatch = aiInstruction.match(auditRegex);
                     const diagramMatch = aiInstruction.match(diagramRegex);
 
-                    if (auditMatch && auditMatch[1]) scopedStructureMatch = { type: 'audit', folder: auditMatch[1].trim() };
-                    else if (diagramMatch && diagramMatch[1]) scopedStructureMatch = { type: 'diagram', folder: diagramMatch[1].trim() };
+                    if (mentionMatch) {
+                        // If @mention found, use it for scoping regardless of command
+                        scopedStructureMatch = { type: 'diagram', folder: mentionMatch[2] };
+                        // If the text also contains "audit" or "analyze", adjust type/instruction
+                        if (aiInstruction.toLowerCase().includes('audit') || aiInstruction.toLowerCase().includes('analyze')) {
+                            scopedStructureMatch.type = 'audit';
+                        }
+                    } else if (auditMatch && auditMatch[1]) {
+                        scopedStructureMatch = { type: 'audit', folder: auditMatch[1].trim() };
+                    } else if (diagramMatch && diagramMatch[1]) {
+                        scopedStructureMatch = { type: 'diagram', folder: diagramMatch[1].trim() };
+                    }
                 }
 
                 if (scopedStructureMatch && diagramMetadata?.repoStructure) {
@@ -415,6 +491,8 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
                         if (targetNode) {
                             const scopedStructure = stringifyStructNode(targetNode);
+                            // Filter context to only include files in this folder (plus root README/configs)
+                            const filteredContext = filterContextByFolder(diagramMetadata.extraContext as string, targetNode.id);
 
                             if (scopedStructureMatch.type === 'audit') {
                                 // Execute Audit
@@ -422,7 +500,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                     scopedStructureMatch.folder,
                                     scopedStructure,
                                     settings,
-                                    undefined // CRITICAL: Do NOT pass global extraContext (README/Package.json) to avoid pollution
+                                    filteredContext
                                 );
 
                                 setAiProcessing(false);
@@ -451,7 +529,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                         `Visualize the logic flow of ${scopedStructureMatch.folder}`,
                                         settings,
                                         scopedStructure,
-                                        undefined // CRITICAL: Do NOT pass global extraContext to avoid pollution
+                                        filteredContext
                                     );
                                     setDiagramLanguage('mermaid');
                                 } else {
@@ -460,7 +538,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                         settings,
                                         diagramLanguage === 'mermaid' ? 'graph TD' : 'plantuml', // Default layout
                                         `Focus on the ${scopedStructureMatch.folder} folder. ${aiInstruction}`,
-                                        undefined, // CRITICAL: Do NOT pass global extraContext to avoid pollution
+                                        filteredContext,
                                         isHealthMap
                                     );
                                 }
@@ -1455,6 +1533,8 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                     className="ai-input-area"
                                     value={aiInstruction}
                                     onChange={(e) => setAiInstruction(e.target.value)}
+                                    onDrop={handleDropOnAI}
+                                    onDragOver={(e) => e.preventDefault()}
                                     placeholder={aiMode === 'instruction'
                                         ? "Describe changes (e.g. 'Use blue colors') OR use scoped commands: 'audit src/utils', 'health of src/auth', 'flow of src/components'..."
                                         : "Paste SQL ('CREATE TABLE...'), JSON object, or Class definitions here..."}
