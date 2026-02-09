@@ -1,5 +1,6 @@
 // Enhanced background service worker for DevCanvas extension
 import { MessageType, type Message, type MessageResponse } from '../utils/messaging';
+import { type Settings } from '../utils/storage';
 
 console.log('DevCanvas service worker loaded');
 
@@ -93,27 +94,27 @@ chrome.runtime.onMessage.addListener((
     switch (type) {
         case MessageType.GET_STORAGE:
         case 'GET_STORAGE':
-            handleGetStorage(message.data).then(sendResponse);
+            handleGetStorage(message.data as string[]).then(sendResponse);
             return true;
 
         case MessageType.FETCH_PR_DIFF:
         case 'FETCH_PR_DIFF':
-            handleFetchPullRequestDiff(message.data?.url).then(sendResponse);
+            handleFetchPullRequestDiff((message.data as { url: string })?.url).then(sendResponse);
             return true;
 
         case MessageType.SET_STORAGE:
         case 'SET_STORAGE':
-            handleSetStorage(message.data).then(sendResponse);
+            handleSetStorage(message.data as Record<string, unknown>).then(sendResponse);
             return true;
 
         case MessageType.ANALYZE_PAGE:
         case 'ANALYZE_PAGE':
-            handleAnalyzePage(sender.tab?.id || message.data?.tabId).then(sendResponse);
+            handleAnalyzePage(sender.tab?.id || (message.data as { tabId?: number })?.tabId).then(sendResponse);
             return true;
 
         case MessageType.ANALYZE_REPO:
         case 'ANALYZE_REPO':
-            handleAnalyzeRepo(message.data).then(sendResponse);
+            handleAnalyzeRepo(message.data as string).then(sendResponse);
             return true;
 
         default:
@@ -130,7 +131,7 @@ async function handleGetStorage(keys: string[]): Promise<MessageResponse> {
     });
 }
 
-async function handleSetStorage(data: any): Promise<MessageResponse> {
+async function handleSetStorage(data: Record<string, unknown>): Promise<MessageResponse> {
     return new Promise((resolve) => {
         chrome.storage.sync.set(data, () => {
             if (chrome.runtime.lastError) {
@@ -153,18 +154,64 @@ async function handleAnalyzePage(tabId?: number): Promise<MessageResponse> {
             target: 'content-script',
         });
         return { success: true, data: response };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
 }
 
 async function handleAnalyzeRepo(repoUrl: string): Promise<MessageResponse> {
-    // Future: Implement GitHub repository analysis
     console.log('Analyzing repository:', repoUrl);
-    return {
-        success: true,
-        data: { message: 'Repository analysis not yet implemented' },
-    };
+
+    try {
+        // Parse owner/repo from URL
+        // Supported formats: github.com/owner/repo, https://github.com/owner/repo
+        const match = repoUrl.match(new RegExp('github\\.com\\/([^/]+)\\/([^/]+)'));
+        if (!match) {
+            return { success: false, error: 'Invalid GitHub URL' };
+        }
+        const owner = match[1];
+        const repo = match[2].replace('.git', ''); // clean .git extension
+        const branch = 'main'; // simplified, ideally detect default branch
+
+        // Get token
+        const { settings } = await new Promise<{ settings?: Settings }>((resolve) => {
+            chrome.storage.sync.get('settings', resolve);
+        });
+        const token = settings?.githubToken;
+
+        const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+        const headers: Record<string, string> = {
+            'Accept': 'application/vnd.github.v3+json',
+        };
+        if (token) {
+            headers['Authorization'] = `token ${token}`;
+        }
+
+        const response = await fetch(url, { headers });
+
+        if (response.status === 403 || response.status === 429) {
+            return { success: false, error: 'GitHub API Rate Limit Exceeded' };
+        }
+
+        if (!response.ok) {
+            // Try 'master' branch if main fails
+            if (branch === 'main' && response.status === 404) {
+                const masterUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
+                const masterResponse = await fetch(masterUrl, { headers });
+                if (masterResponse.ok) {
+                    const data = await masterResponse.json();
+                    return { success: true, data: data.tree };
+                }
+            }
+            return { success: false, error: `GitHub API Error: ${response.status}` };
+        }
+
+        const data = await response.json();
+        return { success: true, data: data.tree };
+
+    } catch (error: unknown) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
 }
 
 async function handleFetchPullRequestDiff(prUrl?: string): Promise<MessageResponse> {
@@ -178,27 +225,53 @@ async function handleFetchPullRequestDiff(prUrl?: string): Promise<MessageRespon
     const diffUrl = prUrl.split('?')[0].split('#')[0].replace(/\/$/, '') + '.diff';
 
     try {
-        const response = await fetch(diffUrl);
+        // Get token from settings
+        const { settings } = await new Promise<{ settings?: Settings }>((resolve) => {
+            chrome.storage.sync.get('settings', resolve);
+        });
+
+        const token = settings?.githubToken;
+        const headers: Record<string, string> = {
+            'Accept': 'application/vnd.github.v3.diff'
+        };
+
+        if (token) {
+            headers['Authorization'] = `token ${token}`;
+        }
+
+        const response = await fetch(diffUrl, { headers });
+
         if (!response.ok) {
             if (response.status === 404) {
                 return { success: false, error: 'PR diff not found. Is this a private repository or invalid URL?' };
             }
-            return { success: false, error: `Failed to fetch diff: ${response.statusText}` };
+            // Fallback: If 406 Not Acceptable (sometimes happens with raw diff endpoint), try without header
+            if (response.status === 406) {
+                const fallbackResponse = await fetch(diffUrl); // Retry without auth/accept
+                if (fallbackResponse.ok) {
+                    const diff = await fallbackResponse.text();
+                    return { success: true, data: truncateDiff(diff) };
+                }
+            }
+
+            return { success: false, error: `Failed to fetch diff: ${response.status} ${response.statusText}` };
         }
 
         const diff = await response.text();
         console.log('DevCanvas: PR diff fetched successfully by background, length:', diff.length);
 
-        // Truncate if too large for messaging limits (though diffs are usually okay, 500k is a safe bet)
-        const output = diff.length > 500000
-            ? diff.slice(0, 500000) + '\n\n... (Diff truncated due to size)'
-            : diff;
-
-        return { success: true, data: output };
-    } catch (error: any) {
+        return { success: true, data: truncateDiff(diff) };
+    } catch (error: unknown) {
         console.error('DevCanvas: Background error fetching PR diff:', error);
-        return { success: false, error: `Background fetch failed: ${error.message}` };
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { success: false, error: `Background fetch failed: ${errorMessage}` };
     }
+}
+
+function truncateDiff(diff: string): string {
+    return diff.length > 500000
+        ? diff.slice(0, 500000) + '\n\n... (Diff truncated due to size)'
+        : diff;
 }
 
 // Context menu integration
@@ -218,15 +291,20 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === 'DevCanvas-create-diagram' && info.selectionText) {
-        // Future: Open diagram creator with selected text
         console.log('Create diagram from:', info.selectionText);
 
-        // Could send message to popup to open diagram editor
-        chrome.runtime.sendMessage({
-            type: MessageType.CREATE_DIAGRAM,
-            data: { text: info.selectionText },
-            target: 'popup',
+        // Store the selection so popup can pick it up when opened
+        chrome.storage.local.set({
+            pendingDiagramInput: info.selectionText,
+            pendingDiagramTimestamp: Date.now()
+        }, () => {
+            // If side panel is available, open it
+            if (chrome.sidePanel && chrome.sidePanel.open && tab?.windowId) {
+                chrome.sidePanel.open({ windowId: tab.windowId })
+                    .catch(e => console.error('Failed to open side panel:', e));
+            }
         });
+
     } else if (info.menuItemId === 'DevCanvas-analyze-page' && tab?.id) {
         handleAnalyzePage(tab.id);
     }

@@ -48,10 +48,11 @@ const DiagramRenderer: React.FC<DiagramRendererProps> = ({
                     setSvg('');
                     if (onError) onError('');
                     resetTransform();
-                } catch (error: any) {
+                } catch (error: unknown) {
                     console.error('PlantUML encode error:', error);
                     setPlantUmlUrl('');
-                    if (onError) onError(error.message);
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    if (onError) onError(errorMessage);
                 }
                 return;
             }
@@ -84,28 +85,28 @@ const DiagramRenderer: React.FC<DiagramRendererProps> = ({
         if (!container) return;
 
         const handleWheel = (e: WheelEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                const rect = container.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+            // Allow standard scrolling if content fits? No, usually canvas implies zoom.
+            // Let's enable zoom by default on wheel.
+            e.preventDefault();
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-                // Use functional update to access latest state without dependency issues
-                setTransform(prev => {
-                    const contentMouseX = (mouseX - prev.x) / prev.scale;
-                    const contentMouseY = (mouseY - prev.y) / prev.scale;
+            // Use functional update to access latest state without dependency issues
+            setTransform(prev => {
+                const contentMouseX = (mouseX - prev.x) / prev.scale;
+                const contentMouseY = (mouseY - prev.y) / prev.scale;
 
-                    const scaleAmount = -e.deltaY * 0.001;
-                    let newScale = prev.scale + scaleAmount;
-                    if (newScale < 0.1) newScale = 0.1;
-                    if (newScale > 10) newScale = 10;
+                const scaleAmount = -e.deltaY * 0.001;
+                let newScale = prev.scale + scaleAmount;
+                if (newScale < 0.1) newScale = 0.1;
+                if (newScale > 10) newScale = 10;
 
-                    const newX = mouseX - contentMouseX * newScale;
-                    const newY = mouseY - contentMouseY * newScale;
+                const newX = mouseX - contentMouseX * newScale;
+                const newY = mouseY - contentMouseY * newScale;
 
-                    return { x: newX, y: newY, scale: newScale };
-                });
-            }
+                return { x: newX, y: newY, scale: newScale };
+            });
         };
 
         // Attach with passive: false to allow preventDefault

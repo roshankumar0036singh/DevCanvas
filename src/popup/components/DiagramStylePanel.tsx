@@ -147,6 +147,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
     // Background properties
     const [bgColor, setBgColor] = useState(currentBackground.color);
     const [bgPattern, setBgPattern] = useState(currentBackground.pattern);
+    const colorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Sync local state when props change
     useEffect(() => {
@@ -154,7 +155,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
         setBgPattern(currentBackground.pattern);
     }, [currentBackground.color, currentBackground.pattern]);
 
-    const handleBgChange = (color: string, pattern: any) => {
+    const handleBgChange = (color: string, pattern: 'dots' | 'lines' | 'cross' | 'none') => {
         setBgColor(color);
         setBgPattern(pattern);
         if (onBackgroundChange) {
@@ -171,7 +172,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
             setSelectedShape(selectedNode.shape || 'rect');
             setFillColor(selectedNode.color || '#1e293b');
             setStrokeColor(selectedNode.strokeColor || '#0ea5e9');
-            setStrokeStyle((selectedNode.strokeStyle as any) || 'solid');
+            setStrokeStyle((selectedNode.strokeStyle as 'solid' | 'dashed' | 'dotted') || 'solid');
             setHandleColor(selectedNode.handleColor || '#00DC82');
             setTextColor(selectedNode.textColor || '#ffffff');
             setImageUrl(selectedNode.imageUrl || '');
@@ -184,17 +185,17 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
             // Pre-fill arrow "from" with selected node
             setArrowFrom(selectedNode.id);
         }
-    }, [selectedNode?.id, selectedNode?.parentNode]);
+    }, [selectedNode]);
 
     // Reset when edge selection changes
     useEffect(() => {
         if (selectedEdge) {
             setEdgeLabel((selectedEdge.label as string) || '');
-            setEdgeColor((selectedEdge.style as any)?.stroke || '#0ea5e9');
-            setEdgeLabelColor((selectedEdge as any).labelStyle?.fill || '#ffffff');
-            setEdgeLabelBg((selectedEdge as any).labelBgStyle?.fill || 'transparent');
+            setEdgeColor((selectedEdge.style as { stroke?: string })?.stroke || '#0ea5e9');
+            setEdgeLabelColor((selectedEdge as unknown as { labelStyle?: { fill?: string } }).labelStyle?.fill || '#ffffff');
+            setEdgeLabelBg((selectedEdge as unknown as { labelBgStyle?: { fill?: string } }).labelBgStyle?.fill || 'transparent');
         }
-    }, [selectedEdge?.id]);
+    }, [selectedEdge?.id, selectedEdge?.label, selectedEdge?.style, selectedEdge]);
 
     const nodeTextRef = useRef<HTMLTextAreaElement>(null);
     const edgeLabelRef = useRef<HTMLTextAreaElement>(null);
@@ -568,7 +569,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
                                                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Stroke Style</label>
                                                     <select
                                                         value={strokeStyle}
-                                                        onChange={(e) => setStrokeStyle(e.target.value as any)}
+                                                        onChange={(e) => setStrokeStyle(e.target.value as 'solid' | 'dashed' | 'dotted')}
                                                         style={{
                                                             width: '100%',
                                                             padding: '10px 12px',
@@ -720,8 +721,8 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
                                                                             const newVal = e.target.value;
                                                                             setLabelBgColor(newVal);
                                                                             // Debounce the update to parent to prevent history spam / render crash
-                                                                            if ((window as any).colorTimeout) clearTimeout((window as any).colorTimeout);
-                                                                            (window as any).colorTimeout = setTimeout(() => {
+                                                                            if (colorTimeoutRef.current) clearTimeout(colorTimeoutRef.current);
+                                                                            colorTimeoutRef.current = setTimeout(() => {
                                                                                 onNodeUpdate(selectedNode.id, { labelBgColor: newVal });
                                                                             }, 200);
                                                                         }}
@@ -754,36 +755,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
                                                                         }}
                                                                     />
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setLabelBgColor('transparent');
-                                                                        onNodeUpdate(selectedNode.id, { labelBgColor: 'transparent' });
-                                                                    }}
-                                                                    title="Clear Background"
-                                                                    style={{
-                                                                        width: '40px',
-                                                                        height: '40px',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        background: 'transparent',
-                                                                        border: '1px solid var(--border)',
-                                                                        borderRadius: '6px',
-                                                                        color: 'var(--text-secondary)',
-                                                                        cursor: 'pointer',
-                                                                        transition: 'all 0.2s'
-                                                                    }}
-                                                                    onMouseEnter={(e) => {
-                                                                        e.currentTarget.style.color = '#fff';
-                                                                        e.currentTarget.style.borderColor = 'var(--text-secondary)';
-                                                                    }}
-                                                                    onMouseLeave={(e) => {
-                                                                        e.currentTarget.style.color = 'var(--text-secondary)';
-                                                                        e.currentTarget.style.borderColor = 'var(--border)';
-                                                                    }}
-                                                                >
-                                                                    <X size={18} />
-                                                                </button>
+
                                                             </div>
                                                         </div>
                                                     </>
@@ -1105,7 +1077,7 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
                                                 {['dots', 'lines', 'cross', 'none'].map(p => (
                                                     <button
                                                         key={p}
-                                                        onClick={() => handleBgChange(bgColor, p)}
+                                                        onClick={() => handleBgChange(bgColor, p as 'dots' | 'lines' | 'cross' | 'none')}
                                                         style={{
                                                             padding: '8px',
                                                             borderRadius: '6px',

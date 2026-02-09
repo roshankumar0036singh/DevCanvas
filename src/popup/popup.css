@@ -82,7 +82,8 @@ body {
     width: 100%;
     height: 100vh;
     min-width: 360px;
-    overflow-x: hidden;
+    overflow: hidden;
+    /* Fix duplicate scrollbar */
     font-size: 13px;
     line-height: 1.5;
 }
@@ -2594,4 +2595,170 @@ input[type="checkbox"] {
     border-radius: 8px;
     color: var(--text-secondary);
     font-style: italic;
+}
+
+/* GitHub Integration Redesign */
+.github-integration-card {
+    background: linear-gradient(145deg, var(--bg-card) 0%, rgba(13, 17, 23, 0.6) 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.github-integration-card:hover {
+    border-color: var(--text-muted);
+}
+
+.github-integration-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--brand-solid);
+    opacity: 0.8;
+}
+
+.github-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.github-title-block {
+    display: flex;
+    flex-direction: column;
+}
+
+.github-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.github-desc {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    max-width: 90%;
+    margin-bottom: 0;
+}
+
+.input-with-icon-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+}
+
+.input-with-icon {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.input-with-icon .input-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    pointer-events: none;
+    z-index: 2;
+    background: transparent;
+}
+
+.input-with-icon input {
+    width: 100%;
+    padding-left: 38px;
+    padding-right: 40px;
+    /* Space for the eye button */
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 38px;
+    transition: all 0.2s;
+    font-family: 'Consolas', monospace;
+    /* Monospace for token */
+    font-size: 12px;
+}
+
+.input-with-icon input:focus {
+    background: var(--bg-element);
+    border-color: var(--brand-solid);
+    box-shadow: 0 0 0 1px var(--brand-glow);
+}
+
+.toggle-visibility-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+    z-index: 3;
+}
+
+.toggle-visibility-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.github-status-badge {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: var(--brand-solid);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+.github-actions-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.link-generate-token {
+    color: var(--brand-solid);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.9;
+    font-weight: 500;
+    transition: opacity 0.2s;
+    margin-right: 4px;
+}
+
+.link-generate-token:hover {
+    opacity: 1;
+    text-decoration: underline;
 }

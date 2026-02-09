@@ -25,13 +25,14 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse: (
     console.log('DevCanvas: Content script handling message:', message.type);
 
     // Wrapper for async handlers to ensure response is sent
-    const handleAsync = async (promise: Promise<any>) => {
+    const handleAsync = async (promise: Promise<unknown>) => {
         try {
             const result = await promise;
             sendResponse({ success: true, data: result });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(`DevCanvas: Error handling ${message.type}:`, error);
-            sendResponse({ success: false, error: error.message || 'Unknown error' });
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            sendResponse({ success: false, error: errorMessage });
         }
     };
 
@@ -68,12 +69,12 @@ async function analyzePage() {
     let diagram = null;
 
     if (isGitHub) {
-        const result = await analyzeGitHubRepo() as any;
+        const result = await analyzeGitHubRepo();
         // Handle legacy string return or new object return
         if (typeof result === 'string') {
             diagram = result;
-        } else {
-            diagram = result.diagram;
+        } else if (result && typeof result === 'object' && 'diagram' in result) {
+            diagram = (result as { diagram: string }).diagram;
         }
         console.log('DevCanvas: Generated diagram:', diagram ? 'YES' : 'NO');
     }
@@ -101,8 +102,8 @@ async function fetchRepoFile(owner: string, repo: string, filename: string): Pro
                 clearTimeout(timeoutId);
                 return await resp.text();
             }
-        } catch (e: any) {
-            if (e.name === 'AbortError') {
+        } catch (e: unknown) {
+            if (e instanceof Error && e.name === 'AbortError') {
                 console.warn(`DevCanvas: Fetch timed out for ${filename} on ${branch}`);
             }
             // Try next branch
@@ -164,7 +165,7 @@ async function analyzeGitHubRepo() {
             const branch = await getBranch(user, repo, token);
             const tree = await ghService.fetchRepoTree(user, repo, branch);
 
-            structure = tree.map((item: any) => ({
+            structure = tree.map((item: { path: string; type: string }) => ({
                 name: item.path,
                 type: item.type === 'blob' ? 'file' : 'dir'
             }));
@@ -374,9 +375,10 @@ async function analyzeReadme(): Promise<{ readme: string; repoName: string }> {
         console.log('DevCanvas: README fetched successfully, length:', readme.length);
 
         return { readme, repoName };
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('DevCanvas: Error fetching README:', error);
-        throw new Error(`Failed to fetch README: ${error.message}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to fetch README: ${errorMessage}`);
     }
 }
 
