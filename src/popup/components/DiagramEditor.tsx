@@ -641,11 +641,23 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 }
             } else {
                 // Mermaid Export (Simplified)
+                // Mermaid Export (Simplified)
                 if (format === 'png') {
+                    // Calculate full dimensions to avoid cropping
+                    const width = container.scrollWidth;
+                    const height = container.scrollHeight;
+
                     const dataUrl = await toPng(container, {
                         backgroundColor: bgColorToUse,
                         filter: filterNode as (node: HTMLElement) => boolean,
-                        pixelRatio: 2
+                        pixelRatio: 3, // Increased for sharpness
+                        width: width,
+                        height: height,
+                        style: {
+                            // meaningful for html-to-image to ensure it captures full content
+                            width: `${width}px`,
+                            height: `${height}px`,
+                        }
                     });
                     const link = window.document.createElement('a');
                     link.download = `${filename}.png`;
