@@ -1,0 +1,48 @@
+name: Update Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-diagrams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Architecture Diagram
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_PROVIDER: openai
+        run: |
+          npx ts-node src/cli/index.ts generate \
+            --path src \
+            --output docs/architecture.mmd \
+            --type flowchart \
+            --task "Create a high-level architectural diagram of the system components and their interactions."
+
+      - name: Commit Changes
+        run: |
+          git config --global user.name 'DevCanvas Bot'
+          git config --global user.email 'bot@devcanvas.io'
+          git add docs/architecture.mmd
+          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: auto-update architecture diagram" && git push)
