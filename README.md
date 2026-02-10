@@ -95,6 +95,3 @@ We welcome contributions! Please see our [CONTRIBUTING.md](./CONTRIBUTING.md) fo
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-<div align="center">
-  <sub>Built with ❤️ by the DevCanvas Team</sub>
-</div>
