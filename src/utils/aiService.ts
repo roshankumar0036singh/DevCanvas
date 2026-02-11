@@ -1182,4 +1182,113 @@ export default {
     assistDocumentation,
     visualizeLogicFlow,
     reviewPullRequest,
+    generateEmbedding,
+    askCodebase,
 };
+
+/**
+ * Ask questions about the codebase using RAG context
+ */
+export async function askCodebase(
+    query: string,
+    context: string,
+    settings: Settings
+): Promise<string> {
+    const provider = settings.aiProvider || 'openai';
+    const apiKey = settings.apiKeys?.[provider] || settings.apiKey;
+
+    if (!apiKey) {
+        throw new Error(`API key for ${provider} not configured.`);
+    }
+
+    const systemPrompt = `You are a Senior Software Architect and Codebase Expert.
+Your goal is to answer the user's question accurately based ONLY on the provided Context.
+
+CRITICAL RULES:
+1. USE CONTEXT: The context contains accurate code snippets from the repository. Base your answer on them.
+2. CITATIONS: When referring to code, cite the filepath and line numbers if available in the context.
+3. HONESTY: If the context does not contain the answer, admit it. Do not hallucinate code that isn't there.
+4. TONE: Professional, technical, and concise.`;
+
+    const userPrompt = `
+CONTEXT:
+${context}
+
+QUESTION:
+${query}
+
+ANSWER:`;
+
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    switch (provider) {
+        case 'openai': return await callOpenAI(fullPrompt, apiKey, false);
+        case 'anthropic': return await callAnthropic(fullPrompt, apiKey, false);
+        case 'gemini': return await callGemini(fullPrompt, apiKey, false);
+        case 'groq': return await callGroq(fullPrompt, apiKey, false);
+        case 'mistral': return await callMistral(fullPrompt, apiKey, false);
+        default: throw new Error(`Unsupported provider: ${provider}`);
+    }
+}
+
+/**
+ * Generate Embeddings for RAG
+ */
+export async function generateEmbedding(
+    text: string,
+    settings: Settings
+): Promise<number[]> {
+    const provider = settings.aiProvider || 'openai';
+    const apiKey = settings.apiKeys?.[provider] || settings.apiKey;
+
+    if (!apiKey) {
+        throw new Error(`API key for ${provider} not configured.`);
+    }
+
+    // Only OpenAI supports embeddings natively in this service structure for now
+    // Mistral also has an endpoint, but let's start with OpenAI compatibility layer
+    // or just assume OpenAI for embeddings if provider is openai/mistral (mistral-embed)
+
+    if (provider === 'openai') {
+        const response = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                input: text,
+                model: 'text-embedding-3-small',
+            }),
+        });
+
+        if (!response.ok) {
+            await handleAPIError('OpenAI Embeddings', response);
+        }
+
+        const data = await response.json();
+        return data.data[0].embedding;
+    }
+    else if (provider === 'mistral') {
+        const response = await fetch('https://api.mistral.ai/v1/embeddings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                input: [text],
+                model: 'mistral-embed',
+            }),
+        });
+
+        if (!response.ok) {
+            await handleAPIError('Mistral Embeddings', response);
+        }
+
+        const data = await response.json();
+        return data.data[0].embedding;
+    }
+
+    throw new Error(`Embeddings not supported for provider: ${provider}`);
+}

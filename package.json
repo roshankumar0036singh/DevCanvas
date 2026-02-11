@@ -59,7 +59,9 @@
         "webpack-cli": "^5.1.0"
     },
     "dependencies": {
+        "@langchain/textsplitters": "^1.0.1",
         "@monaco-editor/react": "^4.6.0",
+        "@pinecone-database/pinecone": "^7.0.0",
         "@types/dagre": "^0.7.53",
         "@types/marked": "^5.0.2",
         "commander": "^14.0.3",
