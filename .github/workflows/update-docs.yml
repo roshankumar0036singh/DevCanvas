@@ -32,7 +32,10 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AI_PROVIDER: openai
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          AI_PROVIDER: mistral
         run: |
           npx ts-node src/cli/index.ts generate \
             --path src \
@@ -42,7 +45,7 @@ jobs:
 
       - name: Commit Changes
         run: |
-          git config --global user.name 'DevCanvas Bot'
-          git config --global user.email 'bot@devcanvas.io'
+          git config --global user.name 'roshankumar0036singh'
+          git config --global user.email 'roshankumar00036@gmail.com'
           git add docs/architecture.mmd
           git diff --quiet && git diff --staged --quiet || (git commit -m "docs: auto-update architecture diagram" && git push)
