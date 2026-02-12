@@ -1669,3 +1669,5 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 };
 
 export default DiagramEditor;
+
+// Commit #6: refactor: simplify state management logic in diagram editor - 2026-02-12T04:15:36.584Z
