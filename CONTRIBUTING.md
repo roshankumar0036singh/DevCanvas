@@ -62,3 +62,5 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 By contributing, you agree that your contributions will be licensed under the **MIT License**.
 
 <!-- Commit #19: docs: update contribution guidelines - 2026-02-12T03:36:22.019Z -->
+
+<!-- Commit #10: docs: refine contributing guidelines for new developers - 2026-02-12T04:15:37.530Z -->
