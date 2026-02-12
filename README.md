@@ -102,3 +102,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <!-- Commit #1: feat(core): initialize project structure - 2026-02-12T03:36:19.290Z -->
 
 <!-- Commit #2: docs: add initial project documentation - 2026-02-12T03:36:19.494Z -->
+
+<!-- Commit #3: chore: update roadmap - 2026-02-12T03:36:19.627Z -->
