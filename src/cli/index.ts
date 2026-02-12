@@ -5,6 +5,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getRepoStructure, getFileContext } from '../utils/fileSystem';
 import { visualizeRepository } from '../utils/aiService';
+import { ingestCodebase } from '../utils/rag/ingestion';
+import { queryCodebase } from '../utils/rag/retrieval';
 import { Settings } from '../utils/storage';
 
 // Load environment variables
@@ -14,8 +16,73 @@ const program = new Command();
 
 program
     .name('devcanvas')
-    .description('DevCanvas CLI - Automated Diagram Generation')
-    .version('0.1.0');
+    .description('DevCanvas CLI - Automated Diagram Generation & RAG')
+    .version('0.2.0');
+
+program
+    .command('chat <question>')
+    .description('Ask a question about your codebase')
+    .action(async (question) => {
+        try {
+            const pineconeKey = process.env.PINECONE_API_KEY;
+            const openaiKey = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.MISTRAL_API_KEY;
+            const provider = process.env.AI_PROVIDER || 'openai';
+
+            if (!pineconeKey || !openaiKey) {
+                console.error('Error: PINECONE_API_KEY and AI_API_KEY are required in .env');
+                process.exit(1);
+            }
+
+            const answer = await queryCodebase(question, {
+                pineconeApiKey: pineconeKey,
+                openaiApiKey: openaiKey,
+                aiProvider: provider as any
+            });
+
+            console.log('\n--- Answer ---\n');
+            console.log(answer);
+            console.log('\n--------------\n');
+
+        } catch (error) {
+            console.error('Chat failed:', error);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('ingest')
+    .description('Ingest codebase into Vector DB for RAG')
+    .option('-p, --path <path>', 'Path to source code', '.')
+    .option('--exclude <patterns...>', 'Glob patterns to exclude', [])
+    .action(async (options) => {
+        try {
+            console.log(`Ingesting codebase at: ${options.path}`);
+            const rootDir = path.resolve(options.path);
+
+            if (!fs.existsSync(rootDir)) {
+                console.error(`Error: Directory not found: ${rootDir}`);
+                process.exit(1);
+            }
+
+            const pineconeKey = process.env.PINECONE_API_KEY;
+            const openaiKey = process.env.OPENAI_API_KEY;
+
+            if (!pineconeKey || !openaiKey) {
+                console.error('Error: PINECONE_API_KEY and OPENAI_API_KEY are required in .env');
+                process.exit(1);
+            }
+
+            await ingestCodebase(rootDir, {
+                pineconeApiKey: pineconeKey,
+                openaiApiKey: openaiKey,
+                exclude: options.exclude
+            });
+
+        } catch (error) {
+            console.error('Ingestion failed:', error);
+            process.exit(1);
+        }
+    });
 
 program
     .command('generate')
