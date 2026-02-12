@@ -1,8 +1,4 @@
-
 import { Pinecone } from '@pinecone-database/pinecone';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 export interface VectorMatch {
     id: string;
@@ -21,7 +17,12 @@ export class VectorStore {
     private indexName: string = 'devcanvas-codebase';
 
     constructor(apiKey?: string) {
-        const key = apiKey || process.env.PINECONE_API_KEY;
+        let key = apiKey;
+        // Safe check for process.env in case we are in browser
+        if (!key && typeof process !== 'undefined' && process.env) {
+            key = process.env.PINECONE_API_KEY;
+        }
+
         if (key) {
             this.client = new Pinecone({ apiKey: key });
         }
@@ -61,15 +62,54 @@ export class VectorStore {
         }
     }
 
+    async validateIndex(expectedDimension: number): Promise<boolean> {
+        if (!this.client) throw new Error('Pinecone Client not initialized.');
+        try {
+            const indexDescription = await this.client.describeIndex(this.indexName);
+            if (indexDescription.dimension !== expectedDimension) {
+                console.error(`❌ Index Dimension Mismatch!`);
+                console.error(`   - Expected: ${expectedDimension}`);
+                console.error(`   - Found: ${indexDescription.dimension}`);
+                console.error(`   Please DELETE and RECREATE the index '${this.indexName}' with dimension ${expectedDimension}.`);
+                return false;
+            }
+            return true;
+        } catch (error: any) {
+            // Check for 404 Not Found (Index doesn't exist)
+            if (error?.message?.includes('404') || error?.status === 404) {
+                console.log(`⚠️ Index '${this.indexName}' not found. Creating it with dimension ${expectedDimension}...`);
+                await this.createIndexIfNotExists(expectedDimension);
+                return true;
+            }
+
+            console.warn('Could not validate index dimension (API error). check logs.', error);
+            // If we can't validate, we'll try to proceed, but upsert might fail if index really doesn't exist 
+            // and creation failed above.
+            return true;
+        }
+    }
+
     async upsertVectors(vectors: { id: string, values: number[], metadata: any }[]) {
         const index = this.getIndex();
 
         // Batch upsert (Pinecone limit is usually 100-1000)
         const batchSize = 100;
-        for (let i = 0; i < vectors.length; i += batchSize) {
-            const batch = vectors.slice(i, i + batchSize);
-            await index.upsert(batch as any);
-            console.log(`Upserted batch ${(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`);
+        try {
+            for (let i = 0; i < vectors.length; i += batchSize) {
+                const batch = vectors.slice(i, i + batchSize);
+                console.log(`Debug Upsert: ID=${batch[0].id}, ValuesLen=${batch[0].values.length}`);
+                await index.upsert({ records: batch as any }); // v7 signature
+                console.log(`Upserted batch ${(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`);
+            }
+        } catch (error) {
+            console.error('❌ Error during Pinecone Upsert:', error);
+            if (error instanceof Error) {
+                console.error('Message:', error.message);
+                console.error('Stack:', error.stack);
+                // @ts-ignore
+                if (error.cause) console.error('Cause:', error.cause);
+            }
+            throw error;
         }
     }
 

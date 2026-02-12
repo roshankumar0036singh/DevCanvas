@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Settings as SettingsIcon, Github, Code } from 'lucide-react';
+import { LayoutDashboard, Settings as SettingsIcon, Github, Code, Database } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import DiagramEditor from './components/DiagramEditor';
 import DocumentEditor from './components/DocumentEditor';
+import RagPanel from './components/RagPanel';
 import storage from '../utils/storage';
 import type { Settings as SettingsType } from '../utils/storage';
 
-type View = 'dashboard' | 'settings' | 'editor' | 'document';
+type View = 'dashboard' | 'settings' | 'editor' | 'document' | 'rag';
 
 const App: React.FC = () => {
     const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -102,6 +103,14 @@ const App: React.FC = () => {
                         <span>Dashboard</span>
                     </button>
                     <button
+                        className={`nav-tab ${currentView === 'rag' ? 'active' : ''}`}
+                        onClick={() => setCurrentView('rag')}
+                        title="Chat with Codebase"
+                    >
+                        <Database size={18} />
+                        <span>RAG</span>
+                    </button>
+                    <button
                         className={`nav-tab ${currentView === 'settings' ? 'active' : ''}`}
                         onClick={() => setCurrentView('settings')}
                         title="Settings"
@@ -119,6 +128,9 @@ const App: React.FC = () => {
                         onOpenDiagram={handleOpenDiagram}
                         onOpenDocument={handleOpenDocument}
                     />
+                )}
+                {currentView === 'rag' && (
+                    <RagPanel />
                 )}
                 {currentView === 'settings' && (
                     <Settings settings={settings} onUpdate={handleSettingsUpdate} />

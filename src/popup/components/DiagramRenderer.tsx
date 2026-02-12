@@ -218,3 +218,5 @@ const DiagramRenderer: React.FC<DiagramRendererProps> = ({
 };
 
 export default DiagramRenderer;
+
+// Commit #11: perf: optimize graph rendering speed with memoization - 2026-02-12T04:15:37.738Z

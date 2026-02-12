@@ -14,6 +14,20 @@ dotenv.config();
 
 const program = new Command();
 
+const banner = `
+\x1b[32m
+  ____             _____                      
+ |  _ \\  ___  __ _|___ /  __ _ _ __   
+ | | | |/ _ \\/ _\` | |_ \\ / _\` | '_ \\  
+ | |_| |  __/ (_| |___) | (_| | | | | 
+ |____/ \\___|\\__,_|____/ \\__,_|_| |_| 
+                                      
+  DevCanvas CLI v0.2.0 - Automated Diagram Generation & RAG
+\x1b[0m
+`;
+
+console.log(banner);
+
 program
     .name('devcanvas')
     .description('DevCanvas CLI - Automated Diagram Generation & RAG')
@@ -65,16 +79,24 @@ program
             }
 
             const pineconeKey = process.env.PINECONE_API_KEY;
-            const openaiKey = process.env.OPENAI_API_KEY;
+            const provider = (process.env.AI_PROVIDER || 'openai') as 'openai' | 'mistral';
+            let apiKey = process.env.OPENAI_API_KEY;
 
-            if (!pineconeKey || !openaiKey) {
-                console.error('Error: PINECONE_API_KEY and OPENAI_API_KEY are required in .env');
+            if (provider === 'mistral') {
+                apiKey = process.env.MISTRAL_API_KEY;
+            } else if (provider === 'openai') {
+                apiKey = process.env.OPENAI_API_KEY;
+            }
+
+            if (!pineconeKey || !apiKey) {
+                console.error(`Error: PINECONE_API_KEY and API Key for ${provider} are required in .env`);
                 process.exit(1);
             }
 
             await ingestCodebase(rootDir, {
                 pineconeApiKey: pineconeKey,
-                openaiApiKey: openaiKey,
+                aiProvider: provider,
+                aiApiKey: apiKey,
                 exclude: options.exclude
             });
 
