@@ -39,7 +39,7 @@ jobs:
         run: |
           npx ts-node src/cli/index.ts generate \
             --path src \
-            --output docs/architecture.mmd \
+            --output DOCS/architecture.mmd \
             --type flowchart \
             --task "Create a high-level architectural diagram of the system components and their interactions."
 
@@ -47,5 +47,5 @@ jobs:
         run: |
           git config --global user.name 'roshankumar0036singh'
           git config --global user.email 'roshankumar00036@gmail.com'
-          git add docs/architecture.mmd
+          git add DOCS/architecture.mmd
           git diff --quiet && git diff --staged --quiet || (git commit -m "docs: auto-update architecture diagram" && git push)
