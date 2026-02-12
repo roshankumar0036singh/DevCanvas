@@ -3,11 +3,11 @@ name: Update Documentation
 on:
   push:
     branches:
-      - master
       - main
     paths:
       - 'src/**'
       - 'README.md'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
