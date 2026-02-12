@@ -104,3 +104,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <!-- Commit #2: docs: add initial project documentation - 2026-02-12T03:36:19.494Z -->
 
 <!-- Commit #3: chore: update roadmap - 2026-02-12T03:36:19.627Z -->
+
+<!-- Commit #10: docs: reference new auth API - 2026-02-12T03:36:20.665Z -->
