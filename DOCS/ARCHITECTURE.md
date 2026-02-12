@@ -1,6 +1,6 @@
-# System Architecture
+# Architecture
 
-DevCanvas operates as a browser extension that injects into GitHub pages but processes logic in a background service worker to maintain performance.
+## AI Service - OpenAI & Mistral
 
 ```mermaid
 graph TD

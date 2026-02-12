@@ -57,7 +57,7 @@
 ---
 
 <a id="overview"></a>
-## 🚀 Mission
+##  Mission
 
 **DevCanvas** transforms GitHub repositories into interactive visual maps. It eliminates the cognitive load of navigating large codebases by converting file trees into clear, logical diagrams.
 
