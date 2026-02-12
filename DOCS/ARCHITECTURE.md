@@ -8,19 +8,19 @@ graph TD
     Ext -->|Message| BG[Background Service Worker]
     
     subgraph Core
-        BG -->|Fetch| GitHub[GitHub API]
-        BG -->|Analyze| AI[AI Service (OpenAI/Mistral)]
-        BG -->|Store| Storage[Chrome Storage]
+        BG -->|"Fetch"| GitHub["GitHub API"]
+        BG -->|"Analyze"| AI["AI Service (OpenAI/Mistral)"]
+        BG -->|"Store"| Storage["Chrome Storage"]
     end
     
     subgraph RAG System
-        AI -->|Embedding| VectorDB[Pinecone]
-        VectorDB -->|Context| AI
+        AI -->|"Embedding"| VectorDB["Pinecone"]
+        VectorDB -->|"Context"| AI
     end
     
     subgraph Visualization
-        Ext -->|Render| ReactFlow[React Flow Canvas]
-        Ext -->|Render| Mermaid[Mermaid.js Renderer]
+        Ext -->|"Render"| ReactFlow["React Flow Canvas"]
+        Ext -->|"Render"| Mermaid["Mermaid.js Renderer"]
     end
 ```
 
