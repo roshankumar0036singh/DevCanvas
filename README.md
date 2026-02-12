@@ -158,15 +158,15 @@ Detailed documentation is available in the [`DOCS`](./DOCS) directory:
 
 ## 🤝 Contributing
 
-We love contributions! Please read our [**Contributing Guide**](./CONTRIBUTING.md) to get started.
-
-<div align="center">
-  <sub>Built with ❤️ by the DevCanvas Team</sub>
+We love contributions! Please read our [**Contributing Guide**](./CONTRIBUTING.md) to get started.<div align="center">
+  <img src="https://contrib.rocks/image?repo=roshankumar0036singh/DevCanvas" alt="Contributors" />
 </div>
+
+---
 
 <!-- Commit #1: feat(core): initialize project structure - 2026-02-12T03:36:19.290Z -->
 
-<!-- Commit #2: docs: add initial project documentation - 2026-02-12T03:36:19.494Z -->
+<!-- Commit #2: docs: update README with detailed usage instructions - 2026-02-12T04:15:35.705Z -->
 
 <!-- Commit #3: chore: update roadmap - 2026-02-12T03:36:19.627Z -->
 
