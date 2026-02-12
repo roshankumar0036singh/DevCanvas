@@ -129,11 +129,17 @@ program
             const structure = await getRepoStructure(rootDir, options.exclude);
 
             // 2. Mock Settings - Read from ENV
-            const apiKey = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY;
+            // 2. Mock Settings - Read from ENV
             const provider = process.env.AI_PROVIDER || 'openai';
+            let apiKey = process.env.OPENAI_API_KEY;
+
+            if (provider === 'mistral') apiKey = process.env.MISTRAL_API_KEY;
+            else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+            else if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY;
+            else if (provider === 'groq') apiKey = process.env.GROQ_API_KEY;
 
             if (!apiKey) {
-                console.error('Error: No API Key found. Please set OPENAI_API_KEY (or ANTHROPIC/GEMINI) in .env');
+                console.error(`Error: API Key for provider '${provider}' not found. Please set ${provider.toUpperCase()}_API_KEY in .env`);
                 process.exit(1);
             }
 
