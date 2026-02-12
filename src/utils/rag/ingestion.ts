@@ -9,13 +9,25 @@ import { Settings } from '../storage';
 
 export async function ingestCodebase(rootDir: string, options: {
     pineconeApiKey?: string,
-    openaiApiKey?: string,
+    aiProvider?: 'openai' | 'mistral',
+    aiApiKey?: string,
     exclude?: string[]
 } = {}) {
     console.log('🚀 Starting codebase ingestion...');
 
     // 1. Initialize Vector Store
     const vectorStore = new VectorStore(options.pineconeApiKey);
+
+    // Check Dimension
+    const provider = options.aiProvider || 'openai';
+    const dims = provider === 'mistral' ? 1024 : 1536;
+
+    console.log(`📏 Validating index dimension for ${provider} (Expected: ${dims})...`);
+    const isValid = await vectorStore.validateIndex(dims);
+
+    if (!isValid) {
+        throw new Error(`Index dimension mismatch. Please check your Pinecone index. Expected ${dims} for ${provider}.`);
+    }
 
     // Create index if needed (default dimensions for text-embedding-3-small)
     // We might need to make this configurable or check if user exists
@@ -43,8 +55,8 @@ export async function ingestCodebase(rootDir: string, options: {
 
     // Mock Settings for AI Service
     const settings: Settings = {
-        aiProvider: 'openai',
-        apiKeys: { openai: options.openaiApiKey },
+        aiProvider: provider,
+        apiKeys: { [provider]: options.aiApiKey },
         theme: 'dark',
         autoSync: false,
         defaultDiagramType: 'mermaid'

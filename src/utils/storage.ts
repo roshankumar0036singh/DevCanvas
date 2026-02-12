@@ -10,6 +10,7 @@ export interface Settings {
         gemini?: string;
         groq?: string;
         mistral?: string;
+        pinecone?: string;
     };
     apiKey?: string; // Deprecated
     autoSync: boolean;

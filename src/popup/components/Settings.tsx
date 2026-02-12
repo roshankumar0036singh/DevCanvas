@@ -246,6 +246,51 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                             );
                         })}
                     </div>
+
+                    {/* Pinecone Vector DB Provider */}
+                    <div
+                        className={`provider-card ${settings.apiKeys?.pinecone || expandedProvider === 'pinecone' ? 'active' : ''}`}
+                        onClick={() => setExpandedProvider(expandedProvider === 'pinecone' ? null : 'pinecone')}
+                        style={{ marginTop: '16px' }}
+                    >
+                        <div className="provider-header">
+                            <div className="provider-info">
+                                <div className="provider-icon-wrapper">
+                                    <Zap size={18} className="provider-icon" style={{ color: '#00DC82' }} />
+                                </div>
+                                <div className="provider-details">
+                                    <div className="provider-name">
+                                        Pinecone
+                                        {settings.apiKeys?.pinecone && <span className="badge-active">CONFIGURED</span>}
+                                    </div>
+                                    <div className="provider-status">
+                                        {settings.apiKeys?.pinecone ? '• Key Configured' : '• No Key Set'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="provider-check">
+                                {settings.apiKeys?.pinecone && <Check size={18} />}
+                            </div>
+                        </div>
+
+                        {/* API Key Input Area */}
+                        {(expandedProvider === 'pinecone' || settings.apiKeys?.pinecone) && (
+                            <div className="provider-config" onClick={(e) => e.stopPropagation()}>
+                                <div className="input-group">
+                                    <label>
+                                        <Key size={10} /> Pinecone API Key
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={settings.apiKeys?.pinecone || ''}
+                                        onChange={(e) => handleApiKeyChange('pinecone', e.target.value)}
+                                        placeholder="pc-..."
+                                        className="api-key-input"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -274,8 +319,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         Clear All Data
                     </button>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 };
 
