@@ -98,3 +98,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <div align="center">
   <sub>Built with ❤️ by the DevCanvas Team</sub>
 </div>
+
+<!-- Commit #1: feat(core): initialize project structure - 2026-02-12T03:36:19.290Z -->
