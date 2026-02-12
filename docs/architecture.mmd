@@ -1,114 +1,108 @@
 flowchart TD
-%% ========== MAIN COMPONENTS ==========
+%% ========== SUBGRAPHS ==========
     subgraph Core["Core Application"]
-        direction TB
-        App["Main App\n(App.tsx)"]
-        Router["Router\n(router.tsx)"]
-        Store["Global State\n(Store.tsx)"]
-        Theme["Theme System\n(theme/)"]
+        A1["Main App(App.tsx)"]
+        R1["Router"]
+        C1["Global Context(Store)"]
+        T1["Theme System"]
     end
 
     subgraph UI_Components["UI Components"]
-        direction TB
-        Sidebar["Sidebar\n(Sidebar.tsx)"]
-        UI_Kit["UI Kit\n(ui/Button.tsx)"]
-        Popup_App["Popup App\n(popup/App.tsx)"]
-        Diagram_Editor["Diagram Editor\n(popup/DiagramEditor.tsx)"]
-        Diagram_Renderer["Diagram Renderer\n(popup/DiagramRenderer.tsx)"]
-        Flow_Nodes["Custom Flow Nodes\n(popup/flowNodes/)"]
-        Mermaid_Converter["Mermaid Converter\n(popup/MermaidConverter.ts)"]
-        AI_Overlay["AI Processing Overlay\n(popup/AIProcessingOverlay.tsx)"]
-        RAG_Panel["RAG Panel\n(popup/RagPanel.tsx)"]
+        UC1["Sidebar"]
+        UC2["Button & UI Primitives"]
+        UC3["Popup Layout(popup/App.tsx)"]
     end
 
-    subgraph Pages["Pages"]
-        direction TB
-        Dashboard_Page["Dashboard\n(pages/Dashboard.tsx)"]
-        Settings_Page["Settings\n(pages/Settings.tsx)"]
+    subgraph Feature_Modules["Feature Modules"]
+        FM1["Dashboard Page"]
+        FM2["Settings Page"]
+        FM3["Diagram Editor"]
+        FM4["Document Editor"]
+        FM5["RAG Integration Panel"]
+        FM6["Node Editors(Custom Nodes)"]
     end
 
-    subgraph Background_Services["Background Services"]
-        direction TB
-        SW["Service Worker\n(background/service-worker.ts)"]
-        Content_Script["Content Script\n(content/content-script.ts)"]
+    subgraph Services["Services"]
+        S1["Auth Service"]
+        S2["AI Processing Service"]
+        S3["GitHub Integration"]
+        S4["File System Abstraction"]
     end
 
-    subgraph CLI["CLI Tool"]
-        CLI_Entry["CLI Entry\n(cli/index.ts)"]
+    subgraph Utilities["Utilities"]
+        U1["Markdown Processing"]
+        U2["Layout Algorithms"]
+        U3["Storage Helpers"]
+        U4["Messaging System"]
+        U5["RAG Pipeline"]
+        U6["Exporters(Mermaid/PlantUML)"]
     end
 
-    %% ========== SERVICES & UTILS ==========
-    subgraph Services["Domain Services"]
-        direction TB
-        Auth_Service["Auth Service\n(services/auth.ts)"]
-        AI_Service["AI Service\n(services/aiService.ts)"]
+    subgraph Background_Scripts["Background Scripts"]
+        BS1["Service Worker"]
+        BS2["Content Script"]
     end
 
-    subgraph Utils["Utilities"]
-        direction TB
-        File_System["File System\n(utils/fileSystem.ts)"]
-        GitHub_Service["GitHub Service\n(utils/githubService.ts)"]
-        Storage["Storage\n(utils/storage.ts)"]
-        Messaging["Messaging\n(utils/messaging.ts)"]
-        Exporters["Exporters\n(utils/exporters.ts)"]
-        Markdown["Markdown\n(utils/markdown.ts)"]
-        Layout["Layout\n(utils/layout.ts)"]
+    subgraph CLI["CLI Tools"]
+        CL1["Build/Dev Scripts"]
     end
 
-    subgraph RAG_Utils["RAG Utilities"]
-        direction TB
-        Ingestion["Ingestion\n(utils/rag/ingestion.ts)"]
-        Retrieval["Retrieval\n(utils/rag/retrieval.ts)"]
-        Vector_Store["Vector Store\n(utils/rag/vectorStore.ts)"]
-        Browser_Ingestion["Browser Ingestion\n(utils/rag/browserIngestion.ts)"]
-    end
+    %% ========== EXTERNAL DEPENDENCIES(if inferred from utils/services) ==========
+    %% NOTE: Only included if explicitly referenced in code(e.g., Firebase SDK imports)
+    %% Placeholder for future explicit deps(currently none validated)
+    %% External1["<External Service>"]
 
-    %% ========== EXTERNAL DEPENDENCIES ==========
-    %% NOTE: Only included if explicitly referenced in code/package.json
-    %% (None detected in provided structure; placeholder for future use)
-    External_APIs["External APIs\n(if configured)"]
-
-    %% ========== FLOW & INTERACTIONS ==========
-    %% Core Flow
-    App -->|renders| Router
-    Router -->|routes to| Pages
-    App -->|uses| Store
-    App -->|applies| Theme
+    %% ========== FLOW CONNECTIONS ==========
+    %% Core Dependencies
+    A1 --> R1
+    A1 --> C1
+    A1 --> T1
 
     %% UI Composition
-    Popup_App -->|composes| Diagram_Editor
-    Popup_App -->|composes| AI_Overlay
-    Popup_App -->|composes| RAG_Panel
-    Diagram_Editor -->|uses| Flow_Nodes
-    Diagram_Editor -->|converts via| Mermaid_Converter
-    Diagram_Editor -->|renders| Diagram_Renderer
-    Pages -->|uses| UI_Components
+    UC3 --> UC1
+    UC3 --> UC2
+    UC3 --> FM3["Diagram Editor"]
+    UC3 --> FM4["Document Editor"]
+    UC3 --> FM5["RAG Panel"]
+
+    %% Feature Module Dependencies
+    FM1 --> FM3
+    FM1 --> FM6
+    FM3 --> U6
+    FM5 --> U5
+    FM5 --> S2
 
     %% Service Dependencies
-    App -->|calls| Services
-    Services -->|uses| Utils
-    AI_Service -->|triggers| AI_Overlay
-    Auth_Service -.->|if auth exists| External_APIs
+    S2 --> U4["Messaging"]
+    S3 --> U4
+    S1 --> U4
+    S3 --> U3["Storage"]
 
-    %% Background Services
-    SW -->|handles events| Content_Script
-    Content_Script -.->|communicates via| Messaging
-    Messaging -->|updates| Store
+    %% Utility Dependencies
+    U5 --> U3
+    U5 --> U1["Markdown"]
+    U6 --> U2["Layout"]
 
-    %% RAG Workflow
-    RAG_Panel -->|ingests via| Ingestion
-    Ingestion -->|stores in| Vector_Store
-    Vector_Store -->|retrieves for| Retrieval
-    Retrieval -->|feeds| AI_Service
-    Browser_Ingestion -->|captures data for| Ingestion
+    %% Script Interactions
+    BS1 -.-> U4
+    BS2 -.-> U4
+    BS2 -.-> FM3
 
-    %% CLI Integration
-    CLI_Entry -->|scripts| Utils
-    CLI_Entry -.->|may interact with| Services
+    %% CLI Build Flow
+    CL1 -.-> A1
+    CL1 -.-> BS1
 
-    %% Utility Usage
-    Utils -->|shared across| Core
-    Utils -->|shared across| UI_Components
-    Utils -->|shared across| Background_Services
-    Storage -->|persists| Store
-    File_System -->|manages| Exporters
+    %% ========== STYLING ==========
+    classDef core fill:#f9f,stroke:#333,color:#000
+    classDef feature fill:#bbf,stroke:#333,color:#000
+    classDef service fill:#f96,stroke:#333,color:#000
+    classDef utility fill:#9f9,stroke:#333,color:#000
+    classDef script fill:#99f,stroke:#333,color:#000
+    classDef cli fill:#f6f,stroke:#333,color:#000
+
+    class A1,R1,C1,T1 core
+    class FM1,FM2,FM3,FM4,FM5,FM6 feature
+    class S1,S2,S3,S4 service
+    class U1,U2,U3,U4,U5,U6 utility
+    class BS1,BS2 script
+    class CL1 cli
