@@ -1,0 +1,114 @@
+flowchart TD
+%% ========== MAIN COMPONENTS ==========
+    subgraph Core["Core Application"]
+        direction TB
+        App["Main App\n(App.tsx)"]
+        Router["Router\n(router.tsx)"]
+        Store["Global State\n(Store.tsx)"]
+        Theme["Theme System\n(theme/)"]
+    end
+
+    subgraph UI_Components["UI Components"]
+        direction TB
+        Sidebar["Sidebar\n(Sidebar.tsx)"]
+        UI_Kit["UI Kit\n(ui/Button.tsx)"]
+        Popup_App["Popup App\n(popup/App.tsx)"]
+        Diagram_Editor["Diagram Editor\n(popup/DiagramEditor.tsx)"]
+        Diagram_Renderer["Diagram Renderer\n(popup/DiagramRenderer.tsx)"]
+        Flow_Nodes["Custom Flow Nodes\n(popup/flowNodes/)"]
+        Mermaid_Converter["Mermaid Converter\n(popup/MermaidConverter.ts)"]
+        AI_Overlay["AI Processing Overlay\n(popup/AIProcessingOverlay.tsx)"]
+        RAG_Panel["RAG Panel\n(popup/RagPanel.tsx)"]
+    end
+
+    subgraph Pages["Pages"]
+        direction TB
+        Dashboard_Page["Dashboard\n(pages/Dashboard.tsx)"]
+        Settings_Page["Settings\n(pages/Settings.tsx)"]
+    end
+
+    subgraph Background_Services["Background Services"]
+        direction TB
+        SW["Service Worker\n(background/service-worker.ts)"]
+        Content_Script["Content Script\n(content/content-script.ts)"]
+    end
+
+    subgraph CLI["CLI Tool"]
+        CLI_Entry["CLI Entry\n(cli/index.ts)"]
+    end
+
+    %% ========== SERVICES & UTILS ==========
+    subgraph Services["Domain Services"]
+        direction TB
+        Auth_Service["Auth Service\n(services/auth.ts)"]
+        AI_Service["AI Service\n(services/aiService.ts)"]
+    end
+
+    subgraph Utils["Utilities"]
+        direction TB
+        File_System["File System\n(utils/fileSystem.ts)"]
+        GitHub_Service["GitHub Service\n(utils/githubService.ts)"]
+        Storage["Storage\n(utils/storage.ts)"]
+        Messaging["Messaging\n(utils/messaging.ts)"]
+        Exporters["Exporters\n(utils/exporters.ts)"]
+        Markdown["Markdown\n(utils/markdown.ts)"]
+        Layout["Layout\n(utils/layout.ts)"]
+    end
+
+    subgraph RAG_Utils["RAG Utilities"]
+        direction TB
+        Ingestion["Ingestion\n(utils/rag/ingestion.ts)"]
+        Retrieval["Retrieval\n(utils/rag/retrieval.ts)"]
+        Vector_Store["Vector Store\n(utils/rag/vectorStore.ts)"]
+        Browser_Ingestion["Browser Ingestion\n(utils/rag/browserIngestion.ts)"]
+    end
+
+    %% ========== EXTERNAL DEPENDENCIES ==========
+    %% NOTE: Only included if explicitly referenced in code/package.json
+    %% (None detected in provided structure; placeholder for future use)
+    External_APIs["External APIs\n(if configured)"]
+
+    %% ========== FLOW & INTERACTIONS ==========
+    %% Core Flow
+    App -->|renders| Router
+    Router -->|routes to| Pages
+    App -->|uses| Store
+    App -->|applies| Theme
+
+    %% UI Composition
+    Popup_App -->|composes| Diagram_Editor
+    Popup_App -->|composes| AI_Overlay
+    Popup_App -->|composes| RAG_Panel
+    Diagram_Editor -->|uses| Flow_Nodes
+    Diagram_Editor -->|converts via| Mermaid_Converter
+    Diagram_Editor -->|renders| Diagram_Renderer
+    Pages -->|uses| UI_Components
+
+    %% Service Dependencies
+    App -->|calls| Services
+    Services -->|uses| Utils
+    AI_Service -->|triggers| AI_Overlay
+    Auth_Service -.->|if auth exists| External_APIs
+
+    %% Background Services
+    SW -->|handles events| Content_Script
+    Content_Script -.->|communicates via| Messaging
+    Messaging -->|updates| Store
+
+    %% RAG Workflow
+    RAG_Panel -->|ingests via| Ingestion
+    Ingestion -->|stores in| Vector_Store
+    Vector_Store -->|retrieves for| Retrieval
+    Retrieval -->|feeds| AI_Service
+    Browser_Ingestion -->|captures data for| Ingestion
+
+    %% CLI Integration
+    CLI_Entry -->|scripts| Utils
+    CLI_Entry -.->|may interact with| Services
+
+    %% Utility Usage
+    Utils -->|shared across| Core
+    Utils -->|shared across| UI_Components
+    Utils -->|shared across| Background_Services
+    Storage -->|persists| Store
+    File_System -->|manages| Exporters
