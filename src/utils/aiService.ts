@@ -693,6 +693,16 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
         // Explicitly target subgraph lines
         fromDiagram = fromDiagram.replace(/^subgraph\s+([^\s[]+)\[\s*\]/gm, 'subgraph $1_Array');
 
+        // 3. Fix Hallucinated Node Shapes:
+        // Handle [("Text")] or [( "Text" )] which should be [( Text )] (Cylinder)
+        // Note: Mermaid 10+ often fails if quotes are inside [()]. Removing them is systemic.
+        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\(\s*"([^"]+)"\s*\)\]/g, '$1[( $2 )]');
+        // Handle [["Text"]] or [[ "Text" ]] which should be [[ Text ]] (Subroutine)
+        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\[\s*"([^"]+)"\s*\]\]/g, '$1[[ $2 ]]');
+        // Fix trailing brackets hallucination like ")]]" or "]]]"
+        fromDiagram = fromDiagram.replace(/(\)|\])\]\]+/g, '$1]');
+
+
         // ---------------------------------------------------------
         // STANDARD FIXES
         // ---------------------------------------------------------
@@ -728,6 +738,11 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
         // If followed by space or newline, remove pipe to make it a simple arrow
         // MUST NOT match if pipe is followed by text and another pipe (valid label)
         fromDiagram = fromDiagram.replace(/(--?>|--\.|==>)\|\s*(?![^|]*\|)([A-Za-z0-9_\["]|$)/g, '$1 $2');
+
+        // Pattern 5: Systemic Fix for unclosed edge labels -->|Text (missing last |)
+        // If a line has exactly one '|' after an arrow, append a closing '|'
+        const regexEdgeLabel = /(--?>|--\.|==>)\|([^|\n]+)$/gm;
+        fromDiagram = fromDiagram.replace(regexEdgeLabel, '$1|$2|');
 
         // ---------------------------------------------------------
         // SANITIZATION END
