@@ -12,6 +12,9 @@ import { Node, Edge, MarkerType, getRectOfNodes } from 'reactflow';
 import storage from '../../utils/storage';
 import { toPng } from 'html-to-image';
 import { DIAGRAM_TEMPLATES } from '../../utils/templates';
+import { MessageType } from '../../utils/messaging';
+import TourOverlay from './TourOverlay';
+import { generateCodeTour, TourStep } from '../../utils/rag/tourGenerator';
 
 interface DiagramEditorProps {
     diagramId: string | null;
@@ -65,11 +68,24 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     const [bgPattern, setBgPattern] = useState<'dots' | 'lines' | 'cross' | 'none'>('dots');
 
     // AI Modal State
+
     const [showAIModal, setShowAIModal] = useState(false);
-    const [aiMode, setAiMode] = useState<'instruction' | 'code-import' | 'logic-flow'>('instruction');
+    const [aiMode, setAiMode] = useState<'instruction' | 'code-import' | 'logic-flow' | 'tour'>('instruction');
     const [aiInstruction, setAiInstruction] = useState('');
     const [aiProcessing, setAiProcessing] = useState(false);
     const [aiMessage, setAiMessage] = useState('');
+
+    // Tour State
+    const [tourSteps, setTourSteps] = useState<TourStep[]>([]);
+    const [currentTourStep, setCurrentTourStep] = useState(0);
+    const [isTourActive, setIsTourActive] = useState(false);
+    const [preTourSnapshot, setPreTourSnapshot] = useState<{
+        nodes: Node[],
+        edges: Edge[],
+        code: string,
+        editorMode: 'code' | 'visual'
+    } | null>(null);
+
 
     // Template Modal State
     const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -180,6 +196,10 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
         setSaving(false);
     }, [diagramId, code, title, diagramLanguage]);
 
+    const isDefaultDiagram = useCallback((content: string) => {
+        return content.trim() === DEFAULT_CODE.trim();
+    }, []);
+
     const loadDiagram = useCallback(async () => {
         setLoading(true);
         if (diagramId) {
@@ -192,6 +212,31 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 setDiagramMetadata(diagram.metadata || null);
             }
         } else {
+            // Check for pending import from context menu
+            try {
+                const storageData = await chrome.storage.local.get('pending_import');
+                if (storageData.pending_import) {
+                    const { diagram, structure, extraContext, timestamp } = storageData.pending_import;
+                    // Only use if recent (within 5 minutes)
+                    if (Date.now() - timestamp < 5 * 60 * 1000) {
+                        console.log('DevCanvas: Found pending import, applying...');
+                        setCode(diagram);
+                        setDiagramMetadata({
+                            repoStructure: Array.isArray(structure)
+                                ? structure.map((s: any) => `${s.type === 'dir' ? '/' : ''}${s.name}`).join('\n')
+                                : (structure || ''),
+                            extraContext: extraContext || ''
+                        });
+                        // Clear storage after use
+                        chrome.storage.local.remove('pending_import');
+                        setLoading(false);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('DevCanvas: Failed to check pending_import', e);
+            }
+
             // New diagram
             const newDiagram = await storage.addDiagram({
                 title: 'Untitled Diagram',
@@ -270,8 +315,10 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     }, [editorMode, flowNodes, flowEdges, selectedNode, selectedEdge, handleDelete]);
 
     useEffect(() => {
+        // Don't reload diagram if a tour is active
+        if (isTourActive) return;
         loadDiagram();
-    }, [diagramId, loadDiagram]);
+    }, [diagramId, loadDiagram, isTourActive]);
 
     // Auto-save every 2 seconds
     useEffect(() => {
@@ -433,14 +480,184 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 return;
             }
 
-            const originalCode = aiMode === 'code-import' || aiMode === 'logic-flow' ? '' : code;
+            const originalCode = aiMode === 'code-import' || aiMode === 'logic-flow' || aiMode === 'tour' ? '' : code;
 
             let instruction = aiInstruction;
             let enhancedCode = '';
 
             const aiService = await import('../../utils/aiService');
 
+            if (aiMode === 'tour') {
+                // Try to get repository context from current tab if not in diagram metadata
+                let repoContext = diagramMetadata?.repoStructure as string | undefined;
+                let repoUrl = '';
+                let extraContext = diagramMetadata?.extraContext as string | undefined;
+
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+                if (!repoContext) {
+                    // Fetch current tab URL to extract GitHub repo
+                    try {
+                        if (tab?.url) {
+                            const match = tab.url.match(/github\.com\/([^/]+)\/([^/]+)/);
+                            if (match) {
+                                repoUrl = `${match[1]}/${match[2]}`;
+                                setAiMessage(`Detected repository: ${repoUrl}. Mapping structure...`);
+
+                                // Send message to tab to get structure
+                                try {
+                                    const response = await chrome.tabs.sendMessage(tab.id!, {
+                                        type: MessageType.ANALYZE_REPO,
+                                        target: 'content-script'
+                                    });
+                                    if (response.success && response.data) {
+                                        repoContext = response.data.structure.map((s: any) => `${s.type === 'dir' ? '/' : ''}${s.name}`).join('\n');
+                                        extraContext = response.data.extraContext as string | undefined;
+                                    }
+                                } catch (msgErr) {
+                                    console.warn('Failed to sendMessage to tab for structure', msgErr);
+                                }
+                            } else {
+                                alert('Please open a GitHub repository page to use Tour mode.');
+                                setAiProcessing(false);
+                                return;
+                            }
+                        } else {
+                            alert('Could not detect current tab. Please open a GitHub repository.');
+                            setAiProcessing(false);
+                            return;
+                        }
+                    } catch (e) {
+                        console.error('Failed to get current tab:', e);
+                        alert('Failed to detect repository context.');
+                        setAiProcessing(false);
+                        return;
+                    }
+                }
+
+                // track current working state locally to avoid stale closure issues
+                let currentWorkingCode = code;
+                let currentWorkingNodes = flowNodes;
+                let currentWorkingEdges = flowEdges;
+
+                // SMART INITIALIZATION: If current diagram is default, force visualize repo first
+                if (isDefaultDiagram(currentWorkingCode) && repoContext) {
+                    setAiMessage(`Mapping out the components for your tour: "${aiInstruction}"...`);
+                    try {
+                        const repoDiagram = await aiService.visualizeRepository(
+                            repoContext as string,
+                            settings,
+                            'graph TD',
+                            `Generate a specific architecture diagram focusing ONLY on the components and flows related to: ${aiInstruction}. This will serve as the map for an interactive code tour.`,
+                            extraContext || undefined
+                        );
+                        if (repoDiagram) {
+                            currentWorkingCode = repoDiagram;
+                            setCode(repoDiagram);
+                            // Set metadata so it's remembered
+                            setDiagramMetadata({
+                                repoStructure: repoContext,
+                                extraContext: extraContext || ''
+                            });
+                            // Convert immediately so we have nodes for the tour
+                            const { nodes, edges } = MermaidConverter.toReactFlow(repoDiagram);
+                            currentWorkingNodes = nodes;
+                            currentWorkingEdges = edges;
+                            setFlowNodes(nodes);
+                            setFlowEdges(edges);
+                            console.log('✅ Auto-initialization complete, nodes:', nodes.length);
+                        }
+                    } catch (vizErr) {
+                        console.error('Auto-visualization failed', vizErr);
+                    }
+                }
+
+                const availableNodes = currentWorkingNodes.map(n => ({
+                    id: n.id,
+                    label: (n.data?.label as string) || n.id,
+                    type: n.type
+                }));
+
+                setAiMessage('Genie is planning the tour route...');
+
+                try {
+                    const steps = await generateCodeTour(
+                        aiInstruction,
+                        availableNodes,
+                        settings,
+                        {
+                            pineconeApiKey: settings.apiKeys?.pinecone,
+                            repoUrl: repoUrl
+                        }
+                    );
+
+                    if (steps && steps.length > 0) {
+                        // Auto-switch to Visual mode if in Code mode
+                        const wasInCodeMode = editorMode === 'code';
+                        let nodesToUse = currentWorkingNodes;
+                        let edgesToUse = currentWorkingEdges;
+
+                        if (wasInCodeMode) {
+                            console.log('📐 Auto-switching to Visual mode for tour');
+                            setEditorMode('visual');
+
+                            // Manually convert code to nodes immediately
+                            console.log('🔨 Manually converting code to visual nodes...');
+                            try {
+                                const { nodes, edges } = MermaidConverter.toReactFlow(currentWorkingCode);
+                                nodesToUse = nodes;
+                                edgesToUse = edges;
+                                // Update state with converted nodes
+                                setFlowNodes(nodes);
+                                setFlowEdges(edges);
+                                console.log('✅ Converted', nodes.length, 'nodes');
+                            } catch (error) {
+                                console.error('Failed to convert code to nodes:', error);
+                                alert('Failed to convert diagram to visual mode. Please try again.');
+                                setAiProcessing(false);
+                                return;
+                            }
+                        }
+
+                        // Debug logging
+                        console.log('🎯 Tour Starting - Current State:');
+                        console.log('  - Code length:', code.length);
+                        console.log('  - Nodes to use:', nodesToUse.length);
+                        console.log('  - Editor Mode:', editorMode, '→', wasInCodeMode ? 'visual' : editorMode);
+                        console.log('  - Code preview:', code.substring(0, 100));
+
+                        // Snapshot current diagram state before starting tour
+                        setPreTourSnapshot({
+                            nodes: nodesToUse,
+                            edges: edgesToUse,
+                            code: code,
+                            editorMode: editorMode  // Save original mode
+                        });
+                        console.log('  - Snapshot created with', nodesToUse.length, 'nodes');
+
+                        setTourSteps(steps);
+                        setCurrentTourStep(0);
+                        setIsTourActive(true);
+                        setShowAIModal(false);
+                        setNotification({
+                            message: wasInCodeMode
+                                ? 'Tour started! (Switched to Visual mode)'
+                                : 'Tour started!',
+                            type: 'success'
+                        });
+                    } else {
+                        alert('Could not generate a valid tour path. Please try a different query.');
+                    }
+                } catch (e) {
+                    console.error('Tour generation failed', e);
+                    alert('Failed to generate tour.');
+                }
+                setAiProcessing(false);
+                return;
+            }
+
             if (aiMode === 'logic-flow') {
+
                 enhancedCode = await aiService.visualizeLogicFlow(aiInstruction, settings);
             } else {
                 // 1. Check for Manual Audit/Diagram Scoping Commands OR @folder Mentions
@@ -976,8 +1193,31 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
     // React Flow conversion - from Code to Visual
     useEffect(() => {
+        console.log('🔄 Code-to-Visual Effect Triggered:', {
+            isTourActive,
+            hasSnapshot: !!preTourSnapshot,
+            codeLength: code.length,
+            editorMode,
+            diagramLanguage
+        });
+
+        // If tour just became active and we have a snapshot, restore it
+        if (isTourActive && preTourSnapshot) {
+            console.log('✅ Restoring from snapshot:', preTourSnapshot.nodes.length, 'nodes');
+            setFlowNodes(preTourSnapshot.nodes);
+            setFlowEdges(preTourSnapshot.edges);
+            return;
+        }
+
+        // Don't convert during active tour to preserve diagram state
+        if (isTourActive) {
+            console.log('⏸️  Skipping conversion - tour is active');
+            return;
+        }
+
         if (editorMode === 'visual' && diagramLanguage === 'mermaid') {
             try {
+                console.log('🔨 Converting code to visual');
                 const { nodes, edges } = MermaidConverter.toReactFlow(code);
                 // JSON stringify to compare deeply? Or just set it. 
                 // Setting it triggers handleFlowNodesChange which triggers syncVisualToCode which checks for diff.
@@ -988,7 +1228,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                 console.error('Failed to convert Mermaid to React Flow:', error);
             }
         }
-    }, [editorMode, diagramLanguage, code]);
+    }, [editorMode, diagramLanguage, code, isTourActive, preTourSnapshot]);
 
     // Sync visual changes to code
     const handleFlowNodesChange = useCallback((nodes: Node[]) => {
@@ -998,7 +1238,7 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
 
     // Effect to debounce sync
     useEffect(() => {
-        if (editorMode === 'visual') {
+        if (editorMode === 'visual' && !isTourActive) {
             const timer = setTimeout(() => {
                 const newCode = MermaidConverter.toMermaid(flowNodes as unknown as FlowNode[], flowEdges as unknown as FlowEdge[]);
                 if (newCode !== code) {
@@ -1133,6 +1373,8 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
     };
 
     const handleFlowNodeClick = (node: Node) => {
+        if (isTourActive) return;
+
         // Try to toggle expansion first
         if (diagramMetadata?.repoStructure && node.data.imageUrl && node.data.imageUrl.includes('folder')) {
             toggleFolderExpansion(node);
@@ -1481,38 +1723,76 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
             {/* Diagram AI Modal */}
             {
                 showAIModal && (
-                    <div className="modal-overlay" onClick={() => setShowAIModal(false)}>
-                        <div className="modal-content" onClick={e => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Sparkles size={18} style={{ color: 'var(--brand-solid)' }} />
-                                    <h3>{aiMode === 'code-import' ? 'Smart Code Import' : 'Enhance Diagram'}</h3>
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.8)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999,
+                        padding: '20px'
+                    }} onClick={() => setShowAIModal(false)}>
+                        <div style={{
+                            background: '#1c2128',
+                            borderRadius: '12px',
+                            border: '1px solid #30363d',
+                            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+                            width: '100%',
+                            maxWidth: '560px',
+                            maxHeight: '90vh',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }} onClick={e => e.stopPropagation()}>
+                            {/* Header */}
+                            <div style={{
+                                padding: '24px 24px 20px',
+                                borderBottom: '1px solid #30363d'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                                    <Sparkles size={20} style={{ color: '#00DC82' }} />
+                                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#c9d1d9' }}>
+                                        {aiMode === 'code-import' ? 'Smart Code Import' : aiMode === 'tour' ? 'Start Code Tour' : 'Enhance Diagram'}
+                                    </h3>
                                 </div>
-                                <div style={{ display: 'flex', background: '#1c2128', borderRadius: '6px', padding: '2px' }}>
+
+                                {/* Tab Buttons */}
+                                <div style={{ display: 'flex', background: '#0d1117', borderRadius: '8px', padding: '4px', gap: '4px' }}>
                                     <button
                                         onClick={() => setAiMode('instruction')}
                                         style={{
-                                            padding: '4px 8px',
-                                            fontSize: '11px',
-                                            background: aiMode === 'instruction' ? '#30363d' : 'transparent',
-                                            color: aiMode === 'instruction' ? '#fff' : '#8b949e',
+                                            flex: 1,
+                                            padding: '10px 12px',
+                                            borderRadius: '6px',
                                             border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
+                                            background: aiMode === 'instruction' ? '#00DC82' : 'transparent',
+                                            color: aiMode === 'instruction' ? '#000' : '#8b949e',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            transition: 'all 0.2s'
                                         }}
                                     >
-                                        Instruct
+                                        Edit / Enhance
                                     </button>
                                     <button
                                         onClick={() => setAiMode('code-import')}
                                         style={{
-                                            padding: '4px 8px',
-                                            fontSize: '11px',
-                                            background: aiMode === 'code-import' ? '#30363d' : 'transparent',
-                                            color: aiMode === 'code-import' ? '#fff' : '#8b949e',
+                                            flex: 1,
+                                            padding: '10px 12px',
+                                            borderRadius: '6px',
                                             border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
+                                            background: aiMode === 'code-import' ? '#00DC82' : 'transparent',
+                                            color: aiMode === 'code-import' ? '#000' : '#8b949e',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            transition: 'all 0.2s'
                                         }}
                                     >
                                         Import Code
@@ -1520,59 +1800,197 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                                     <button
                                         onClick={() => setAiMode('logic-flow')}
                                         style={{
-                                            padding: '4px 8px',
-                                            fontSize: '11px',
-                                            background: aiMode === 'logic-flow' ? '#30363d' : 'transparent',
-                                            color: aiMode === 'logic-flow' ? '#fff' : '#8b949e',
+                                            flex: 1,
+                                            padding: '10px 12px',
+                                            borderRadius: '6px',
                                             border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
+                                            background: aiMode === 'logic-flow' ? '#00DC82' : 'transparent',
+                                            color: aiMode === 'logic-flow' ? '#000' : '#8b949e',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            transition: 'all 0.2s'
                                         }}
                                     >
                                         Logic Flow
                                     </button>
+                                    <button
+                                        onClick={() => setAiMode('tour')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '10px 12px',
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            background: aiMode === 'tour' ? '#00DC82' : 'transparent',
+                                            color: aiMode === 'tour' ? '#000' : '#8b949e',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Eye size={14} /> Start Tour
+                                    </button>
                                 </div>
                             </div>
-                            <div className="modal-body" style={{ padding: '0 16px' }}>
-                                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                                    {aiMode === 'instruction'
-                                        ? 'Key in a custom prompt or select a style below.'
-                                        : aiMode === 'logic-flow'
-                                            ? 'Paste a complex function or block of code to visualize its internal logic paths (if/else, loops, errors).'
-                                            : 'Paste your SQL, JSON, or Code snippet below to generate a diagram automatically.'}
-                                </p>
+
+                            {/* Content */}
+                            <div style={{
+                                padding: '24px',
+                                overflowY: 'auto',
+                                flex: 1
+                            }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '10px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    color: '#8b949e',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    {aiMode === 'instruction' ? 'Your Instruction' :
+                                        aiMode === 'code-import' ? 'Paste Code Snippet' :
+                                            aiMode === 'tour' ? 'Tour Topic' :
+                                                'Function Code'}
+                                </label>
                                 <textarea
-                                    className="ai-input-area"
                                     value={aiInstruction}
                                     onChange={(e) => setAiInstruction(e.target.value)}
                                     onDrop={handleDropOnAI}
                                     onDragOver={(e) => e.preventDefault()}
-                                    placeholder={aiMode === 'instruction'
-                                        ? "Describe changes (e.g. 'Use blue colors') OR use scoped commands: 'audit src/utils', 'health of src/auth', 'flow of src/components'..."
-                                        : "Paste SQL ('CREATE TABLE...'), JSON object, or Class definitions here..."}
-                                    rows={6}
+                                    placeholder={
+                                        aiMode === 'instruction' ? "e.g. 'Add a database node connected to the API'" :
+                                            aiMode === 'code-import' ? "Paste your JSON, SQL, or Class definitions here..." :
+                                                aiMode === 'tour' ? "e.g. 'Authentication Flow' or 'Payment Processing'" :
+                                                    "Paste the function code you want to visualize..."
+                                    }
+                                    style={{
+                                        width: '100%',
+                                        height: '140px',
+                                        padding: '14px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #30363d',
+                                        background: '#0d1117',
+                                        color: '#c9d1d9',
+                                        fontSize: '14px',
+                                        fontFamily: 'monospace',
+                                        resize: 'vertical',
+                                        boxSizing: 'border-box',
+                                        outline: 'none',
+                                        transition: 'border-color 0.2s'
+                                    }}
+                                    onFocus={(e) => e.currentTarget.style.borderColor = '#00DC82'}
+                                    onBlur={(e) => e.currentTarget.style.borderColor = '#30363d'}
                                 />
+
                                 {aiMode === 'instruction' && (
-                                    <div className="ai-quick-actions">
-                                        <button className="btn-chip" onClick={() => setAiInstruction('Use a Professional Blue/Gray color theme with rounded nodes')}>
-                                            Professional
-                                        </button>
-                                        <button className="btn-chip" onClick={() => setAiInstruction('Use Vibrant Colors and distinct shapes for different node types')}>
-                                            Vibrant
-                                        </button>
-                                        <button className="btn-chip" onClick={() => setAiInstruction('Use a Minimalist Black & White theme')}>
-                                            Minimalist
-                                        </button>
-                                        <button className="btn-chip" onClick={() => setAiInstruction('Make the layout Left-to-Right (LR) instead of Top-Down')}>
-                                            Rotate Layout
-                                        </button>
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '8px',
+                                        marginTop: '16px',
+                                        flexWrap: 'wrap'
+                                    }}>
+                                        {[
+                                            { label: 'Professional', value: 'Use a Professional Blue/Gray color theme with rounded nodes' },
+                                            { label: 'Vibrant', value: 'Use Vibrant Colors and distinct shapes for different node types' },
+                                            { label: 'Minimalist', value: 'Use a Minimalist Black & White theme' },
+                                            { label: 'Rotate Layout', value: 'Make the layout Left-to-Right (LR) instead of Top-Down' }
+                                        ].map(preset => (
+                                            <button
+                                                key={preset.label}
+                                                onClick={() => setAiInstruction(preset.value)}
+                                                style={{
+                                                    padding: '8px 14px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid #30363d',
+                                                    background: '#21262d',
+                                                    color: '#8b949e',
+                                                    fontSize: '12px',
+                                                    fontWeight: '500',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.borderColor = '#00DC82';
+                                                    e.currentTarget.style.color = '#c9d1d9';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.borderColor = '#30363d';
+                                                    e.currentTarget.style.color = '#8b949e';
+                                                }}
+                                            >
+                                                {preset.label}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </div>
-                            <div className="modal-footer">
-                                <button className="btn-secondary" onClick={() => setShowAIModal(false)}>Cancel</button>
-                                <button className="btn-primary" onClick={executeEnhancement} disabled={saving}>
-                                    {saving ? 'Processing...' : (aiMode === 'instruction' ? 'Enhance' : 'Generate Diagram')}
+
+                            {/* Footer */}
+                            <div style={{
+                                padding: '16px 24px',
+                                borderTop: '1px solid #30363d',
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: '12px'
+                            }}>
+                                <button
+                                    onClick={() => setShowAIModal(false)}
+                                    style={{
+                                        padding: '10px 20px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #30363d',
+                                        background: '#21262d',
+                                        color: '#c9d1d9',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = '#30363d';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = '#21262d';
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={executeEnhancement}
+                                    disabled={saving}
+                                    style={{
+                                        padding: '10px 24px',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        background: saving ? '#484f58' : 'linear-gradient(135deg, #00DC82 0%, #0a3d2e 100%)',
+                                        color: '#000',
+                                        fontSize: '14px',
+                                        fontWeight: '700',
+                                        cursor: saving ? 'not-allowed' : 'pointer',
+                                        boxShadow: saving ? 'none' : '0 0 20px rgba(0, 220, 130, 0.4)',
+                                        transition: 'all 0.2s',
+                                        minWidth: '140px'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (!saving) {
+                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                            e.currentTarget.style.boxShadow = '0 4px 24px rgba(0, 220, 130, 0.5)';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (!saving) {
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 220, 130, 0.4)';
+                                        }
+                                    }}
+                                >
+                                    {saving ? 'Processing...' : (aiMode === 'instruction' ? 'Enhance' : aiMode === 'tour' ? 'Start Tour' : 'Generate Diagram')}
                                 </button>
                             </div>
                         </div>
@@ -1592,18 +2010,59 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                             onNodeSelect={handleNodeSelect}
                         />
                     ) : (
-                        <ReactFlowEditor
-                            initialNodes={flowNodes}
-                            initialEdges={flowEdges}
-                            onNodesChange={handleFlowNodesChange}
-                            onEdgesChange={handleFlowEdgesChange}
-                            onNodeClick={handleFlowNodeClick}
-                            onEdgeClick={handleFlowEdgeClick}
-                            onNodeDragStart={handleNodeDragStart}
-                            onNodeDragStop={handleNodeDragStop}
-                            backgroundColor={bgColor}
-                            backgroundVariant={bgPattern}
-                        />
+                        <>
+                            <ReactFlowEditor
+                                initialNodes={flowNodes}
+                                initialEdges={flowEdges}
+                                onNodesChange={handleFlowNodesChange}
+                                onEdgesChange={handleFlowEdgesChange}
+                                onNodeClick={handleFlowNodeClick}
+                                onEdgeClick={handleFlowEdgeClick}
+                                onNodeDragStart={handleNodeDragStart}
+                                onNodeDragStop={handleNodeDragStop}
+                                backgroundColor={bgColor}
+                                backgroundVariant={bgPattern}
+                                activeNodeId={isTourActive ? tourSteps[currentTourStep]?.nodeId : null}
+                            />
+
+                            {/* Tour Overlay */}
+                            {isTourActive && (
+                                <TourOverlay
+                                    currentStepIndex={currentTourStep}
+                                    steps={tourSteps}
+                                    onNext={() => {
+                                        if (currentTourStep < tourSteps.length - 1) {
+                                            setCurrentTourStep(prev => prev + 1);
+                                        } else {
+                                            // Finish - restore original mode if needed
+                                            if (preTourSnapshot?.editorMode === 'code') {
+                                                console.log('📐 Restoring Code mode after tour');
+                                                setEditorMode('code');
+                                            }
+                                            setIsTourActive(false);
+                                            setTourSteps([]);
+                                            setPreTourSnapshot(null); // Clear snapshot
+                                            setNotification({ message: 'Tour completed!', type: 'success' });
+                                        }
+                                    }}
+                                    onPrev={() => {
+                                        if (currentTourStep > 0) {
+                                            setCurrentTourStep(prev => prev - 1);
+                                        }
+                                    }}
+                                    onClose={() => {
+                                        // Restore original mode if needed
+                                        if (preTourSnapshot?.editorMode === 'code') {
+                                            console.log('📐 Restoring Code mode after tour close');
+                                            setEditorMode('code');
+                                        }
+                                        setIsTourActive(false);
+                                        setTourSteps([]);
+                                        setPreTourSnapshot(null); // Clear snapshot
+                                    }}
+                                />
+                            )}
+                        </>
                     )}
                     {error && <div className="error-message">{error}</div>}
                 </div>
