@@ -121,7 +121,7 @@ const App: React.FC = () => {
                 </nav>
             </header>
 
-            <main className="main-content">
+            <main className="main-content" style={{ padding: currentView === 'rag' ? 0 : undefined }}>
                 {currentView === 'dashboard' && (
                     <Dashboard
                         settings={settings}
