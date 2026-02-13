@@ -1,5 +1,9 @@
 import { MessageType, type Message, type MessageResponse } from '../utils/messaging';
 
+import { createRoot } from 'react-dom/client';
+import Overlay from './Overlay';
+import './overlay.css';
+
 console.log('DevCanvas content script loaded');
 
 // Listen for messages from popup or background
@@ -61,6 +65,30 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse: (
 
 function activateOverlay() {
     console.log('Activating overlay...');
+    const existingRoot = document.getElementById('devcanvas-overlay-root');
+
+    if (existingRoot) {
+        // Toggle visibility if already exists
+        const currentDisplay = existingRoot.style.display;
+        existingRoot.style.display = currentDisplay === 'none' ? 'block' : 'none';
+        return;
+    }
+
+    // Create container
+    const rootDiv = document.createElement('div');
+    rootDiv.id = 'devcanvas-overlay-root';
+    rootDiv.className = 'devcanvas-root'; // Scope styles
+    document.body.appendChild(rootDiv);
+
+    // Mount React App
+    const root = createRoot(rootDiv);
+    root.render(
+        <div className="devcanvas-root">
+            <Overlay onClose={() => {
+                rootDiv.style.display = 'none';
+            }} />
+        </div>
+    );
 }
 
 async function analyzePage() {
