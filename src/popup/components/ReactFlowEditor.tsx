@@ -209,6 +209,7 @@ interface ReactFlowEditorProps {
     onNodeDragStop?: (event: React.MouseEvent, node: Node) => void;
     backgroundColor?: string;
     backgroundVariant?: 'dots' | 'lines' | 'cross' | 'none';
+    activeNodeId?: string | null;  // New prop for tour animation
 }
 
 const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
@@ -221,11 +222,14 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
     onNodeDragStart,
     onNodeDragStop,
     backgroundColor = '#0d1117',
-    backgroundVariant = 'lines'
+    backgroundVariant = 'lines',
+    activeNodeId = null
 }) => {
     const [nodes, setNodes, handleNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, handleEdgesChange] = useEdgesState(initialEdges);
     const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+    const [rfInstance, setRfInstance] = useState<any>(null); // Store RF instance
+
 
     const getVariant = () => {
         switch (backgroundVariant) {
@@ -348,6 +352,27 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedEdge, setEdges]);
 
+    // Tour Animation Effect
+    useEffect(() => {
+        if (activeNodeId && rfInstance) {
+            const targetNode = nodes.find(n => n.id === activeNodeId);
+            if (targetNode) {
+                // Determine optimal zoom/position
+                // We fit view to this specific node with some padding
+                rfInstance.fitView({
+                    nodes: [{ id: activeNodeId }],
+                    padding: 0.5,
+                    duration: 1200,
+                    minZoom: 0.5,
+                    maxZoom: 1.5
+                });
+
+                // Optional: Highlight the node visually (handled in parent or via class mapping)
+            }
+        }
+    }, [activeNodeId, rfInstance, nodes]);
+
+
     return (
         <div style={{
             width: '100%',
@@ -364,6 +389,7 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onConnect={onConnect}
+                onInit={setRfInstance}
                 onNodeClick={(_, node) => onNodeClick(node)}
                 onEdgeClick={handleEdgeClickInternal}
                 nodeTypes={nodeTypes}
