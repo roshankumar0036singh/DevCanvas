@@ -33,6 +33,19 @@ const RagPanel: React.FC = () => {
                 }
             }
         });
+
+        // Check for pending input from context menu
+        chrome.storage.local.get(['pendingDiagramInput', 'pendingDiagramTimestamp'], (result) => {
+            if (result.pendingDiagramInput) {
+                // optional: check timestamp to ensure freshness (e.g. within 1 min)
+                const isRecent = Date.now() - (result.pendingDiagramTimestamp || 0) < 60000;
+                if (isRecent) {
+                    setInputValue(result.pendingDiagramInput);
+                    // Clear it so it doesn't reappear
+                    chrome.storage.local.remove(['pendingDiagramInput', 'pendingDiagramTimestamp']);
+                }
+            }
+        });
     }, []);
 
     const scrollToBottom = () => {
@@ -159,6 +172,7 @@ const RagPanel: React.FC = () => {
             background: 'var(--bg-main)',
             fontFamily: 'var(--font-main)',
             overflow: 'hidden',
+            position: 'relative', // Fix: Establish positioning context for floating status bar
         }}>
             {/* Ambient Background Gradient */}
             <div style={{
@@ -174,15 +188,25 @@ const RagPanel: React.FC = () => {
 
             {/* Glassmorphic Header */}
 
-            {/* Minimal Status Bar */}
+            {/* Minimal Status Bar - Floating */}
             <div style={{
+                position: 'absolute',
+                top: '16px',
+                left: '50%',
+                transform: 'translateX(-50%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                zIndex: 10,
-                flexShrink: 0
+                zIndex: 50,
+                background: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(12px)',
+                borderRadius: '24px',
+                padding: '6px 12px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                maxWidth: '90%'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
                     {ingestedRepo ? (
                         <div style={{
                             fontSize: '11px',
@@ -190,14 +214,14 @@ const RagPanel: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            background: 'rgba(0, 220, 130, 0.1)',
-                            border: '1px solid rgba(0, 220, 130, 0.1)',
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            fontWeight: '500'
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '180px'
                         }}>
-                            <CheckCircle2 size={12} />
-                            {ingestedRepo}
+                            <CheckCircle2 size={12} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ingestedRepo}</span>
                         </div>
                     ) : (
                         <div style={{
@@ -206,7 +230,7 @@ const RagPanel: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            padding: '4px 8px'
+                            whiteSpace: 'nowrap'
                         }}>
                             <Github size={12} /> No active repository
                         </div>
@@ -214,32 +238,30 @@ const RagPanel: React.FC = () => {
                 </div>
 
                 {messages.length > 0 && (
-                    <button
-                        onClick={clearChat}
-                        title="Clear Conversation"
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            borderRadius: '50%',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '11px',
-                            opacity: 0.7
-                        }}>
-                            <X size={14} /> Clear
-                        </div>
-                    </button>
+                    <>
+                        <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)', margin: '0 8px', flexShrink: 0 }} />
+                        <button
+                            onClick={clearChat}
+                            title="Clear Conversation"
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                padding: '0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'color 0.2s',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                        >
+                            <X size={14} />
+                            <span style={{ fontSize: '11px', marginLeft: '4px' }}>Clear</span>
+                        </button>
+                    </>
                 )}
             </div>
 
@@ -247,7 +269,7 @@ const RagPanel: React.FC = () => {
             <div style={{
                 flex: 1,
                 overflowY: 'auto',
-                padding: '20px',
+                padding: '80px 20px 100px 20px', // Increased bottom padding for floating input
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '24px',
@@ -446,7 +468,7 @@ const RagPanel: React.FC = () => {
                             borderTopRightRadius: msg.role === 'user' ? '2px' : '16px',
                             borderTopLeftRadius: msg.role === 'assistant' || msg.role === 'system' ? '2px' : '16px',
                             background: msg.role === 'user'
-                                ? 'linear-gradient(135deg, var(--brand-solid) 0%, #36E4DA 100%)'
+                                ? 'linear-gradient(135deg, #00DC82 0%, #36E4DA 100%)'
                                 : msg.role === 'system'
                                     ? 'var(--bg-element)'
                                     : 'var(--bg-card)',
@@ -485,35 +507,44 @@ const RagPanel: React.FC = () => {
                 <div ref={messagesEndRef} style={{ height: '0px' }} />
             </div>
 
-            {/* Input Area */}
+            {/* Input Area - Floating */}
             <div style={{
-                padding: '16px',
-                background: 'linear-gradient(to top, var(--bg-main) 80%, transparent)',
-                zIndex: 10
+                position: 'absolute',
+                bottom: '16px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'calc(100% - 32px)',
+                maxWidth: '500px',
+                zIndex: 50,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
             }}>
                 <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '12px',
-                    padding: '8px',
+                    background: 'rgba(21, 26, 35, 0.85)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '24px',
+                    padding: '8px 8px 8px 16px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.2)',
-                    transition: 'border-color 0.2s',
+                    gap: '12px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.2s',
                     position: 'relative'
                 }}>
                     {!ingestedRepo && (
                         <div style={{
                             position: 'absolute',
                             inset: 0,
-                            background: 'rgba(0, 0, 0, 0.6)',
-                            backdropFilter: 'blur(2px)',
-                            borderRadius: '12px',
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            backdropFilter: 'blur(4px)',
+                            borderRadius: '24px',
                             zIndex: 10,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
+                            cursor: 'not-allowed'
                         }}>
                             <span style={{ fontSize: '11px', color: '#fff', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <AlertCircle size={12} /> Please connect a repository first
@@ -534,7 +565,7 @@ const RagPanel: React.FC = () => {
                             flex: 1,
                             background: 'transparent',
                             border: 'none',
-                            padding: '8px 12px',
+                            padding: '4px 0',
                             color: 'var(--text-primary)',
                             fontSize: '13px',
                             lineHeight: '1.5',
@@ -554,8 +585,8 @@ const RagPanel: React.FC = () => {
                         style={{
                             width: '32px',
                             height: '32px',
-                            borderRadius: '8px',
-                            background: (!ingestedRepo || !inputValue.trim()) ? 'var(--bg-button)' : 'var(--brand-solid)',
+                            borderRadius: '50%',
+                            background: (!ingestedRepo || !inputValue.trim()) ? 'rgba(255,255,255,0.05)' : 'var(--brand-solid)',
                             color: (!ingestedRepo || !inputValue.trim()) ? 'var(--text-muted)' : '#000',
                             border: 'none',
                             display: 'flex',
@@ -563,31 +594,42 @@ const RagPanel: React.FC = () => {
                             justifyContent: 'center',
                             cursor: (!ingestedRepo || !inputValue.trim()) ? 'default' : 'pointer',
                             transition: 'all 0.2s',
-                            flexShrink: 0
+                            flexShrink: 0,
+                            boxShadow: (!ingestedRepo || !inputValue.trim()) ? 'none' : '0 0 10px rgba(0, 220, 130, 0.3)'
                         }}
                     >
-                        <Send size={16} />
+                        <Send size={16} style={{ marginLeft: (!ingestedRepo || !inputValue.trim()) ? 0 : '-2px' }} />
                     </button>
                 </div>
-                <div style={{ textAlign: 'center', marginTop: '8px' }}>
-                    <button
-                        onClick={() => setShowRepoInput(!showRepoInput)}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            fontSize: '10px',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            textDecoration: 'none',
-                            opacity: 0.7,
-                            transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                        onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
-                    >
-                        {showRepoInput ? 'Hide connection settings' : 'Repository Settings'}
-                    </button>
-                </div>
+                {!ingestedRepo && (
+                    <div style={{ textAlign: 'center' }}>
+                        <button
+                            onClick={() => setShowRepoInput(!showRepoInput)}
+                            style={{
+                                background: 'rgba(15, 23, 42, 0.6)',
+                                backdropFilter: 'blur(4px)',
+                                border: '1px solid rgba(255,255,255,0.05)',
+                                borderRadius: '12px',
+                                padding: '4px 12px',
+                                fontSize: '10px',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                fontWeight: '500'
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.background = 'rgba(15, 23, 42, 0.8)';
+                                e.currentTarget.style.color = '#fff';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(15, 23, 42, 0.6)';
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                            }}
+                        >
+                            {showRepoInput ? 'Hide Settings' : 'Repository Settings'}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
