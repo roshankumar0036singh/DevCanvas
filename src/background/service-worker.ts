@@ -283,6 +283,12 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 
     chrome.contextMenus.create({
+        id: 'DevCanvas-chat-selection',
+        title: 'Chat about Selection (Floating)',
+        contexts: ['selection'],
+    });
+
+    chrome.contextMenus.create({
         id: 'DevCanvas-analyze-page',
         title: 'Analyze Current Page',
         contexts: ['page'],
@@ -290,23 +296,53 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'DevCanvas-create-diagram' && info.selectionText) {
-        console.log('Create diagram from:', info.selectionText);
+    if ((info.menuItemId === 'DevCanvas-create-diagram' || info.menuItemId === 'DevCanvas-chat-selection') && info.selectionText) {
+        console.log('Open overlay with selection:', info.selectionText);
 
-        // Store the selection so popup can pick it up when opened
+        // Store the selection so popup/overlay can pick it up when opened
         chrome.storage.local.set({
             pendingDiagramInput: info.selectionText,
             pendingDiagramTimestamp: Date.now()
         }, () => {
-            // If side panel is available, open it
-            if (chrome.sidePanel && chrome.sidePanel.open && tab?.windowId) {
-                chrome.sidePanel.open({ windowId: tab.windowId })
-                    .catch(e => console.error('Failed to open side panel:', e));
+            // Send message to content script to open floating overlay
+            if (tab?.id) {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: MessageType.ACTIVATE_OVERLAY,
+                    target: 'content-script',
+                }).catch(err => {
+                    console.warn('Could not send message to content script. Is it loaded?', err);
+                    // Fallback to side panel if content script fails/not allowed? 
+                    // No, let's strictly stick to the user's request for floating panel.
+                    // But maybe user is on a page where content script didn't run.
+                });
             }
         });
 
     } else if (info.menuItemId === 'DevCanvas-analyze-page' && tab?.id) {
-        handleAnalyzePage(tab.id);
+        console.log('DevCanvas: Analyzing current page from context menu...');
+        handleAnalyzePage(tab.id).then(response => {
+            if (response.success && response.data) {
+                console.log('DevCanvas: Analysis successful, saving to storage...');
+                // Save to local storage for the popup to catch
+                chrome.storage.local.set({
+                    'pending_import': {
+                        ...response.data,
+                        timestamp: Date.now()
+                    }
+                }, () => {
+                    console.log('DevCanvas: Analysis saved to pending_import');
+                    // Notify that we have fresh data
+                    chrome.runtime.sendMessage({
+                        type: 'ANALYSIS_READY',
+                        data: response.data
+                    }).catch(() => {
+                        // Popup might be closed, ignore
+                    });
+                });
+            } else {
+                console.error('DevCanvas: Page analysis failed:', response.error);
+            }
+        });
     }
 });
 
