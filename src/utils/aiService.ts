@@ -430,6 +430,7 @@ CRITICAL: FLOWCHART RULES
     }
 
     const prompt = `You are a Senior Software Architect. ${taskDescription}
+${instruction ? `\nCORE OBJECTIVE: Generate a MINIMALIST diagram that focuses ONLY on the logic and components related to "${instruction}". Prune all irrelevant files, folders, and services that do not contribute to this specific flow.` : ''}
 
 Repo Structure:
 ${truncatedStructure}
@@ -441,6 +442,8 @@ ${typeSpecificInstructions}
 GOAL: Map the files and folders to logical components or services.
 
 CRITICAL RULES:
+1. FOCUS & MINIMALISM: ${instruction ? `Only include nodes that are essential to understanding the "${instruction}" logic. Eliminate noise.` : 'Include all major architectural components.'}
+2. COMPONENT GROUPING: Group related files into single logical participants or subgraphs where possible.
 3. USE Semantic Labels: Use human-readable names like "Auth Service" instead of filenames.
 4. NO HALLUCINATIONS: ONLY include external services (Firebase, AWS, Stripe, etc.) if they are EXPLICITLY imported or configured in the source code or package.json. DO NOT guess based on comments or common stacks.
 5. CRITICAL: Sanitize ALL Node/Class IDs. Use ONLY Alphanumeric + Underscore. DO NOT use array syntax like 'Type[]' or 'Scripts[]'.
@@ -694,11 +697,9 @@ function cleanMermaidResponse(text: string, expectedType?: string): string {
         fromDiagram = fromDiagram.replace(/^subgraph\s+([^\s[]+)\[\s*\]/gm, 'subgraph $1_Array');
 
         // 3. Fix Hallucinated Node Shapes:
-        // Handle [("Text")] or [( "Text" )] which should be [( Text )] (Cylinder)
-        // Note: Mermaid 10+ often fails if quotes are inside [()]. Removing them is systemic.
-        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\(\s*"([^"]+)"\s*\)\]/g, '$1[( $2 )]');
-        // Handle [["Text"]] or [[ "Text" ]] which should be [[ Text ]] (Subroutine)
-        fromDiagram = fromDiagram.replace(/([A-Za-z0-9_.-]+)\[\[\s*"([^"]+)"\s*\]\]/g, '$1[[ $2 ]]');
+        // Prune redundant double-quotes: nodeId[(""Text"")] -> nodeId[("Text")]
+        fromDiagram = fromDiagram.replace(/(\[|\{|\()"+([^"]+)"+(\)|\]|\})/g, '$1"$2"$3');
+
         // Fix trailing brackets hallucination like ")]]" or "]]]"
         fromDiagram = fromDiagram.replace(/(\)|\])\]\]+/g, '$1]');
 
