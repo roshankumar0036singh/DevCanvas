@@ -548,7 +548,12 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                             repoContext as string,
                             settings,
                             'graph TD',
-                            `Generate a specific architecture diagram focusing ONLY on the components and flows related to: ${aiInstruction}. This will serve as the map for an interactive code tour.`,
+                            `Generate a specific, MINIMALIST architecture diagram focusing ONLY on the core components and logic flows related to: ${aiInstruction}. 
+                            
+                            CRITICAL INSTRUCTIONS:
+                            1. PRUNE IRRELEVANT NODES: Do not include the whole repository. Only include files/folders that are directly part of this specific feature/flow.
+                            2. COMPONENT-LEVEL: Group related files into single logical blocks where possible to reduce clutter.
+                            3. FOCUS: This diagram will serve as an interactive tour map, so it must be clean and easy to follow.`,
                             extraContext || undefined
                         );
                         if (repoDiagram) {
@@ -1064,15 +1069,15 @@ const DiagramEditor: React.FC<DiagramEditorProps> = ({ diagramId, onBack, onOpen
                         data: {
                             ...node.data,
                             label: updates.text === undefined ? node.data.label : updates.text,
-                            color: updates.color || node.data.color,
-                            strokeColor: updates.strokeColor || node.data.strokeColor,
-                            strokeStyle: updates.strokeStyle || node.data.strokeStyle,
-                            handleColor: updates.handleColor || node.data.handleColor,
-                            textColor: updates.textColor || node.data.textColor,
-                            imageUrl: updates.imageUrl === undefined ? node.data.imageUrl : updates.imageUrl,
-                            strokeWidth: updates.strokeWidth || node.data.strokeWidth,
-                            groupShape: updates.groupShape || node.data.groupShape,
-                            labelBgColor: updates.labelBgColor || node.data.labelBgColor
+                            color: updates.color !== undefined ? updates.color : node.data.color,
+                            strokeColor: updates.strokeColor !== undefined ? updates.strokeColor : node.data.strokeColor,
+                            strokeStyle: updates.strokeStyle !== undefined ? updates.strokeStyle : node.data.strokeStyle,
+                            handleColor: updates.handleColor !== undefined ? updates.handleColor : node.data.handleColor,
+                            textColor: updates.textColor !== undefined ? updates.textColor : node.data.textColor,
+                            imageUrl: updates.imageUrl !== undefined ? updates.imageUrl : node.data.imageUrl,
+                            strokeWidth: updates.strokeWidth !== undefined ? updates.strokeWidth : node.data.strokeWidth,
+                            groupShape: updates.groupShape !== undefined ? updates.groupShape : node.data.groupShape,
+                            labelBgColor: updates.labelBgColor !== undefined ? updates.labelBgColor : node.data.labelBgColor
                         }
                     };
                 }
