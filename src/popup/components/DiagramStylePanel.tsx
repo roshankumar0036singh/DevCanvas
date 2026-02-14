@@ -224,12 +224,14 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
             shape: selectedShape,
             color: fillColor,
             strokeColor: strokeColor,
-            strokeStyle: strokeStyle,
+            strokeStyle: strokeStyle || 'solid',
             handleColor: handleColor,
             textColor: textColor,
             imageUrl: imageUrl,
             imageSize: imageSize,
-            strokeWidth: strokeWidth
+            strokeWidth: strokeWidth,
+            groupShape: groupShape,
+            labelBgColor: labelBgColor
         });
     };
 
@@ -709,6 +711,35 @@ const DiagramStylePanel: React.FC<DiagramStylePanelProps> = ({
                                                         </div>
 
                                                         <div className="style-group" style={{ marginBottom: '20px' }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Label Color</label>
+                                                            </div>
+                                                            <div className="color-input-group" style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                                                                <input
+                                                                    type="color"
+                                                                    value={ensureFullHex(textColor)}
+                                                                    onChange={(e) => {
+                                                                        const newVal = e.target.value;
+                                                                        setTextColor(newVal);
+                                                                        if (colorTimeoutRef.current) clearTimeout(colorTimeoutRef.current);
+                                                                        colorTimeoutRef.current = setTimeout(() => {
+                                                                            onNodeUpdate(selectedNode.id, { textColor: newVal });
+                                                                        }, 200);
+                                                                    }}
+                                                                    style={{ width: '40px', height: '40px', border: 'none', borderRadius: '6px', cursor: 'pointer', padding: 0, background: 'none' }}
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    value={textColor}
+                                                                    onChange={(e) => {
+                                                                        setTextColor(e.target.value);
+                                                                        onNodeUpdate(selectedNode.id, { textColor: e.target.value });
+                                                                    }}
+                                                                    placeholder="#ffffff"
+                                                                    style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '13px' }}
+                                                                />
+                                                            </div>
+
                                                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                                                                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Label Background</label>
                                                             </div>
