@@ -1,136 +1,51 @@
 flowchart TD
-%% ========== SUBGRAPHS ========== %%
-    subgraph Core["Core System"]
-        direction TB
-        Router["Router\n(router.tsx)"]
-        Storage["Storage Service\n(storage.ts)"]
-        Messaging["Messaging\n(messaging.ts)"]
+%% --- Core Components ---
+    subgraph User_Interface["User Interface"]
+        A1["Popup\n(App.tsx)"]
+        A2["Diagram Editor\n(DiagramEditor.tsx)"]
+        A3["Diagram Renderer\n(DiagramRenderer.tsx)"]
+        A4["Node Templates\n(flowNodes/)"]
+        A5["Overlay\n(Overlay.tsx)"]
     end
 
-    subgraph CLI["Command-Line Interface\n(cli/)"]
-        CLI_Entry["CLI Entry\n(index.ts)"]
+    subgraph Core_Services["Core Services"]
+        B1["AI Processing\n(aiService.ts)"]
+        B2["File System\n(fileSystem.ts)"]
+        B3["Messaging\n(messaging.ts)"]
+        B4["Storage\n(storage.ts)"]
+        B5["RAG Engine\n(rag/)"]
     end
 
-    subgraph Background["Background Services\n(background/)"]
-        SW["Service Worker\n(service-worker.ts)"]
+    subgraph Utility_Components["Utility Components"]
+        C1["Exporters\n(exporters.ts)"]
+        C2["Layout Algorithms\n(layout.ts)"]
+        C3["Structure Parser\n(structureParser.ts)"]
+        C4["Mermaid Converter\n(MermaidConverter.ts)"]
     end
 
-    subgraph Content["Content Scripts\n(content/)"]
-        CS["Content Script\n(content-script.tsx)"]
-        Overlay["UI Overlay\n(Overlay.tsx)"]
-    end
+    %% --- External Interactions ---
+    D1[("User")]
+    D2[("Browser Context")]
+    D3[("Local Storage")]
+    D4[("GitHub API\n(githubService.ts)")]
 
-    subgraph Popup["Popup UI\n(popup/)"]
-        direction TB
-        Popup_Entry["Entry\n(index.tsx)"]
-        App["Main App\n(App.tsx)"]
-        Dashboard["Dashboard\n(Dashboard.tsx)"]
-        DiagramEditor["Diagram Editor\n(DiagramEditor.tsx)"]
-        DiagramRenderer["Renderer\n(DiagramRenderer.tsx)"]
-        DocumentEditor["Document Editor\n(DocumentEditor.tsx)"]
-        AIOverlay["AI Processing\n(AIProcessingOverlay.tsx)"]
-        Settings["Settings\n(Settings.tsx)"]
-        Tour["Tour Guide\n(TourOverlay.tsx)"]
-        RAGPanel["RAG Panel\n(RagPanel.tsx)"]
-        MermaidConverter["Mermaid Converter\n(MermaidConverter.ts)"]
-        FlowEditor["React Flow Editor\n(ReactFlowEditor.tsx)"]
-        StylePanel["Style Panel\n(DiagramStylePanel.tsx)"]
-        NodeEditor["Node Editor\n(NodeEditor.tsx)"]
-        FlowNodes["Custom Nodes\n(flowNodes/)"]
-    end
-
-    subgraph Utils["Utilities\n(utils/)"]
-        direction TB
-        AI["AI Service\n(aiService.ts)"]
-        Exporters["Exporters\n(exporters.ts)"]
-        FS["File System\n(fileSystem.ts)"]
-        GitHub["GitHub Service\n(githubService.ts)"]
-        Helpers["Helpers\n(helpers.ts)"]
-        Layout["Layout\n(layout.ts)"]
-        Legacy["Legacy Support\n(legacy.ts)"]
-        Markdown["Markdown\n(markdown.ts)"]
-        StructureParser["Structure Parser\n(structureParser.ts)"]
-        Templates["Templates\n(templates.ts)"]
-    end
-
-    subgraph RAG["RAG Subsystem\n(utils/rag/)"]
-        direction TB
-        Ingestion["Data Ingestion\n(ingestion.ts)"]
-        BrowserIngestion["Browser Ingestion\n(browserIngestion.ts)"]
-        Retrieval["Retrieval\n(retrieval.ts)"]
-        VectorStore["Vector Store\n(vectorStore.ts)"]
-        TourGen["Tour Generator\n(tourGenerator.ts)"]
-    end
-
-    %% ========== EXTERNAL DEPENDENCIES(if inferred from typical browser extensions) ========== %%
-    BrowserAPI["Browser APIs\n(chrome.*/browser.*)"]
-    LocalStorage["Local Storage"]
-
-    %% ========== FLOW ========== %%
-    %% Core Dependencies
-    Router -->|routes| Popup_Entry
-    Router -->|routes| Content
-    Storage -->|persist| Popup
-    Storage -->|persist| Content
-    Messaging -->|ipc| Background
-    Messaging -->|ipc| Content
-    Messaging -->|ipc| Popup
-
-    %% CLI Flow
-    CLI_Entry -->|invokes| Core
-
-    %% Background Services
-    SW -->|handles events| BrowserAPI
-    SW -->|sync| LocalStorage
-    SW -->|broadcasts| Messaging
-
-    %% Content Scripts
-    CS -->|injects| Overlay
-    CS -->|communicates| Messaging
-    CS -->|uses| Utils
-    Overlay -->|renders| BrowserAPI
-
-    %% Popup UI
-    Popup_Entry -->|App|
-    App --> Dashboard
-    App --> DiagramEditor
-    App --> DocumentEditor
-    App --> AIOverlay
-    App --> Settings
-    App --> Tour
-    DiagramEditor --> DiagramRenderer
-    DiagramEditor --> FlowEditor
-    DiagramEditor --> StylePanel
-    DiagramEditor --> NodeEditor
-    DiagramEditor --> FlowNodes
-    DiagramEditor --> MermaidConverter
-    FlowEditor --> FlowNodes
-    AIOverlay -->|uses| RAG
-    RAGPanel -->|configures| RAG
-
-    %% Utilities
-    AI -->|processes| RAG
-    Exporters -->|serializes| DiagramEditor
-    FS -->|manages| LocalStorage
-    GitHub -->|fetches| BrowserAPI
-    Helpers -->|shared| Popup
-    Helpers -->|shared| Content
-    Layout -->|arranges| DiagramRenderer
-    Markdown -->|parses| DocumentEditor
-    StructureParser -->|validates| DiagramEditor
-    Templates -->|provides| DocumentEditor
-
-    %% RAG Subsystem
-    Ingestion -->|feeds| VectorStore
-    BrowserIngestion -->|scrapes| BrowserAPI
-    BrowserIngestion -->|feeds| VectorStore
-    Retrieval -->|queries| VectorStore
-    TourGen -->|generates| Tour
-
-    %% External Interactions
-    Popup -->|stores| LocalStorage
-    Content -->|stores| LocalStorage
-    Background -->|stores| LocalStorage
-    Popup -->|uses| BrowserAPI
-    CLI -->|may use| BrowserAPI
-*(Note: External services like Firebase/AWS were **not** included as they were not explicitly referenced in the provided structure or implied by `package.json` dependencies. If such services are used, their nodes and edges should be added explicitly.)*
+    %% --- Logical Flow ---
+    D1 -->|Triggers Action| A1
+    A1 -->|Renders| A2
+    A1 -->|Displays| A5
+    A2 -->|Uses| A3
+    A2 -->|Loads| A4
+    A2 -->|Saves/Loads| B4
+    A2 -->|Exports| C1
+    A2 -->|Converts| C4
+    A2 -->|Processes| B1
+    A2 -->|Lays Out| C2
+    A2 -->|Parses| C3
+    B1 -->|Uses| B5
+    B2 -->|Reads/Writes| D3
+    B3 -->|Communicates| D2
+    B4 -->|Persists| D3
+    B5 -->|Ingests| D4
+    C1 -->|Generates| D2
+    C3 -->|Validates| A2
+    D2 -->|Hosts| A5
