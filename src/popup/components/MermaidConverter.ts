@@ -407,7 +407,11 @@ export class MermaidConverter {
                 }
             }
 
-            if (node.data.color !== defaultColor || node.data.strokeColor !== defaultStroke || node.data.strokeStyle !== defaultStrokeStyle) {
+            if (node.data.color !== defaultColor ||
+                node.data.strokeColor !== defaultStroke ||
+                node.data.strokeStyle !== defaultStrokeStyle ||
+                node.data.strokeWidth !== undefined ||
+                node.data.textColor !== undefined) {
                 const styles = [];
                 if (node.data.color && node.data.color !== defaultColor) {
                     styles.push(`fill:${node.data.color.replace(/\s/g, '')}`);
@@ -420,16 +424,18 @@ export class MermaidConverter {
                     if (defaultStrokeStyle !== 'dashed') styles.push('stroke-dasharray: 5 5');
                 } else if (node.data.strokeStyle === 'dotted') {
                     styles.push('stroke-dasharray: 1 2');
-                } else {
+                } else if (node.data.strokeStyle === 'solid') {
                     // Solid
                     if (defaultStrokeStyle !== 'solid') styles.push('stroke-dasharray: 0');
                 }
 
                 if (styles.length > 0 || node.data.strokeWidth) {
-                    if (node.data.strokeWidth) {
+                    if (node.data.strokeWidth !== undefined) {
                         styles.push(`stroke-width:${node.data.strokeWidth}px`);
                     } else {
-                        styles.push('stroke-width:2px');
+                        // For non-groups, we might want to skip if default is 2px, 
+                        // but to be safe and consistent with user request:
+                        if (!isGroup) styles.push('stroke-width:2px');
                     }
                     code += `    style ${styleId} ${styles.join(',')}\n`;
                 }
@@ -1144,7 +1150,8 @@ export class MermaidConverter {
                         node.data.strokeStyle = styles['stroke-dasharray'] === '5 5' ? 'dashed' : 'dotted';
                     }
                     if (styles['stroke-width']) {
-                        // We default to 2px, no op needed unless we store width
+                        const width = parseInt(styles['stroke-width'].replace('px', ''));
+                        if (!isNaN(width)) node.data.strokeWidth = width;
                     }
                 }
             }
