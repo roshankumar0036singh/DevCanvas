@@ -361,8 +361,8 @@ const ReactFlowEditor: React.FC<ReactFlowEditorProps> = ({
                 // We fit view to this specific node with some padding
                 rfInstance.fitView({
                     nodes: [{ id: activeNodeId }],
-                    padding: 0.5,
-                    duration: 1200,
+                    padding: 1.2,
+                    duration: 600,
                     minZoom: 0.5,
                     maxZoom: 1.5
                 });
