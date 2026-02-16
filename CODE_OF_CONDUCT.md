@@ -43,7 +43,7 @@ Examples of unacceptable behavior include:
 
 Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project team at `support@devcanvas.io`.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project team at `roshankumar00036@gmail.com`
 
 ---
 
